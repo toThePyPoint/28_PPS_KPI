@@ -1,4 +1,5 @@
 import time
+import traceback
 from datetime import datetime
 import pandas as pd
 
@@ -175,7 +176,7 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
 
     def calculate_to_be_produced_gr_c(row, col_suffix=""):
         orders_quantity_column_name = f'orders_quantity{col_suffix}'
-        stock_quantity = row['stock_quantity'] + row['transit_quantity']
+        stock_quantity = row[f'stock_quantity{col_suffix}'] + row['transit_quantity']
         if stock_quantity < row[orders_quantity_column_name]:
             return row[orders_quantity_column_name] - stock_quantity
         else:
@@ -210,8 +211,34 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
     mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity']]
 
-    merged = pd.merge(zsdkap_zsbe_mb5t_merged_df, mb52_zsdkap_merged_df, on='mat_number', how='left', suffixes=('_df1', '_df2'))
-    merged['stock_quantity'] = merged['stock_quantity_df1'].fillna(0) + merged['stock_quantity_df2'].fillna(0)
+    merged = pd.merge(zsdkap_zsbe_mb5t_merged_df, mb52_zsdkap_merged_df, on='mat_number', how='left', suffixes=('_zsbe', '_mb52'))
+    merged['stock_quantity'] = merged['stock_quantity_zsbe'].fillna(0) + merged['stock_quantity_mb52'].fillna(0)
+
+    # Drop the temporary columns
+    merged = merged.drop(columns=['stock_quantity_mb52'])
+
+    for h in horizons:
+        zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df,
+                                                                               date_limit=get_nth_working_day(h))
+        mb52_zsdkap_merged_df = pd.merge(zsdkap_customer_orders_numbers_df, mb52_df,
+                                         on=('mat_number', 'customer_order_number', 'customer_order_position'),
+                                         how='inner')
+        mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
+        mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity']]
+        mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.rename(columns={'stock_quantity': 'stock_quantity_mb52'})
+
+        merged = pd.merge(merged, mb52_zsdkap_merged_df, on='mat_number', how='left')
+
+        # try:
+        merged[f'stock_quantity_{h}_days'] = merged['stock_quantity_zsbe'].fillna(0) + merged['stock_quantity_mb52'].fillna(0)
+        # except KeyError:
+        #     merged[f'stock_quantity_{h}_days'] = merged[f'stock_quantity_{h}_days_df1'].fillna(0) + merged[f'stock_quantity'].fillna(0)
+        # try:
+            # Drop the temporary columns
+        merged = merged.drop(columns=[f'stock_quantity_mb52'])
+        # except KeyError:
+        #     # Drop the temporary columns
+        #     merged = merged.drop(columns=[f'stock_quantity_{h}_days_df1', f'stock_quantity'])
 
     zsdkap_zsbe_mb5t_merged_df = merged
     zsdkap_zsbe_mb5t_merged_df['to_be_produced_all'] = zsdkap_zsbe_mb5t_merged_df.apply(calculate_to_be_produced_all,
@@ -250,7 +277,7 @@ if __name__ == "__main__":
     # lines = ["P100"]
     # mrp_controllers = ['L1K']
     # product_names = [('R4', 'R7', 'R3', 'R5')]  # Product names starts with...
-    print("OK")
+
     try:
         for line, mrp, prd_name in zip(lines, mrp_controllers, product_names):
             kpis_result = calculate_order_level_KPI(zsdkap_report_name=zsdkap, zsbe_report_name=zsbe, mb52_report_name="mb52",
@@ -264,7 +291,9 @@ if __name__ == "__main__":
                 sheet_name="LUB"
             )
     except Exception as e:
-        print(e)
+        print("Błąd: ", e)
+        error_details = traceback.format_exc()
+        print("Szczegóły błędu:\n", error_details)
         input("Press Enter...")
 
 
