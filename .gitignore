@@ -163,6 +163,5 @@ cython_debug/
 
 .idea
 data/
-notebook.ipynb
 excel_files/
 
