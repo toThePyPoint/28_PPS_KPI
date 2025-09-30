@@ -77,10 +77,10 @@ mb52_new_columns_names = {
 
 def create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name):
     global ZSDKAP_FILE_PATH, ZSBE_FILE_PATH, MB5T_FROM_2101_TO_ALL_PLANTS_FILE_PATH, KPIS_FILE_PATH, MB52_FILE_PATH
-    ZSDKAP_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/{zsdkap_report_name}.xlsx'
-    ZSBE_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/{zsbe_report_name}.xlsx'
-    MB5T_FROM_2101_TO_ALL_PLANTS_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/{mb5t_report_name}.xlsx'
-    MB52_FILE_PATH = f'C:/Temp/Kamil/Prywatne/Programowanie/99_Moje_projekty/28_PPS_KPI/excel_files/{mb52_report_name}.xlsx'
+    ZSDKAP_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/{zsdkap_report_name}.xlsx'
+    ZSBE_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/{zsbe_report_name}.xlsx'
+    MB5T_FROM_2101_TO_ALL_PLANTS_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty/28_PPS_KPI\excel_files/{mb5t_report_name}.xlsx'
+    MB52_FILE_PATH = f'C:/Temp/Kamil/Prywatne/07_Programowanie/99_Moje_projekty/28_PPS_KPI/excel_files/{mb52_report_name}.xlsx'
 
 
 def get_zsdkap_df(mrp_controller, mat_name, df, date_limit=None):
@@ -256,7 +256,7 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     for h in horizons:
         kpis[f'ORDERS LEVEL (GR C - {h})'] = int(zsdkap_zsbe_mb5t_merged_df[f'to_be_produced_gr_c_{h}_days'].sum())
 
-    zsdkap_zsbe_mb5t_merged_df.to_excel(f"C:/Temp/Kamil/Prywatne/Programowanie/99_Moje_projekty/28_PPS_KPI/excel_files/output/output_{'_'.join(mrp_controller)}.xlsx")
+    zsdkap_zsbe_mb5t_merged_df.to_excel(f"C:/Temp/Kamil/Prywatne/07_Programowanie/99_Moje_projekty/28_PPS_KPI/excel_files/output/output_{'_'.join(mrp_controller)}.xlsx")
     return kpis
 
 
@@ -265,14 +265,15 @@ if __name__ == "__main__":
     today_str = today.strftime('%Y-%m-%d')
 
     zsdkap = 'zsdkap'
-    zsbe = 'ZSBE_r4_r7'
+    zsbe = 'ZSBE_all'
     mb52 = 'mb52'
+    mb5t = "MB5T_from_2101_to_all_plants"
 
     horizons = [3, 5, 10]
 
-    lines = ["P100", "M200"]
-    mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82')]
-    product_names = [('R4', 'R7', 'R3', 'R5'), ('R4', 'R7', 'R3', 'R5')]  # Product names starts with...
+    lines = ["P100", "M200", "M300", "M320", "M500", "M600"]
+    mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82'), ('L3H', 'L82'), 'L2H', 'LD1', 'LZ1']
+    product_names = [('R4', 'R7', 'R3', 'R5'), ('R4', 'R7', 'R3', 'R5'), ('R6', 'R8'), 'Q4', 'R2', ('ZI', 'KO', 'Li')]  # Product names starts with...
 
     # lines = ["P100"]
     # mrp_controllers = ['L1K']
@@ -280,7 +281,7 @@ if __name__ == "__main__":
 
     try:
         for line, mrp, prd_name in zip(lines, mrp_controllers, product_names):
-            kpis_result = calculate_order_level_KPI(zsdkap_report_name=zsdkap, zsbe_report_name=zsbe, mb52_report_name="mb52",
+            kpis_result = calculate_order_level_KPI(zsdkap_report_name=zsdkap, zsbe_report_name=zsbe, mb52_report_name=mb52, mb5t_report_name=mb5t,
                                                     horizons=horizons, mrp_controller=mrp, mat_name=prd_name)
             kpis_result["LINE"] = line
 
