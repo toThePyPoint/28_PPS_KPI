@@ -1,4 +1,4 @@
-import time
+import sys
 import traceback
 from datetime import datetime
 import pandas as pd
@@ -64,14 +64,18 @@ mb52_dtypes = {
     'Materiał': 'string',
     'Nieogranicz.wykorz.': 'float',
     'Dokument SD': 'string',
-    'Pozycja (SD)': 'string'
+    'Pozycja (SD)': 'string',
+    'Zakład': 'string',
+    'Skład': 'string'
 }
 
 mb52_new_columns_names = {
     'Materiał': 'mat_number',
     'Nieogranicz.wykorz.': 'stock_quantity',
     'Dokument SD': 'customer_order_number',
-    'Pozycja (SD)': 'customer_order_position'
+    'Pozycja (SD)': 'customer_order_position',
+    'Zakład': 'plant',
+    'Skład': 'storage_location'
 }
 
 
@@ -162,7 +166,8 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
                               mb52_report_name="mb52",
                               horizons=None,
                               mrp_controller='L1K',
-                              mat_name='R4'):
+                              mat_name='R4',
+                              ready_goods_storage_locs=('0004', '0005', 'FSC')):
 
     def calculate_to_be_produced_all(row):
         stock_quantity = row['stock_quantity'] + row['transit_quantity']
@@ -194,6 +199,31 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     zsbe_df = get_zsbe_df(mrp_controller)
     mb5t_df = get_mb5t_df()
     mb52_df = get_mb52_df()
+
+    # ===== Start of MB52 stocks implementation ====
+    # This snippet of code ensures that the stock_quantities data is taken from MB52 transaction instead of ZSBE
+    # I excluded confi ('99') items, because there is separate logic for them further, which I don't want to change
+    mb52_df_all_stocks = mb52_df.copy()
+    mb52_df_all_stocks = mb52_df_all_stocks[(mb52_df_all_stocks['storage_location'].isin(ready_goods_storage_locs))
+                                            & (~mb52_df_all_stocks['mat_number'].str.startswith('99'))]
+    mb52_df_all_stocks = mb52_df_all_stocks[['mat_number', 'stock_quantity']]
+    mb52_df_all_stocks = mb52_df_all_stocks.groupby('mat_number', as_index=False).sum()
+
+    # Step 1: Merge the two DataFrames on 'mat_number' (left join to retain zsbe_df's rows)
+    merged_df = pd.merge(zsbe_df, mb52_df_all_stocks, on='mat_number', how='left', suffixes=('_old', '_new'))
+
+    # Step 2: Replace the stock_quantity in zsbe_df with the new stock_quantity
+    # Fill missing values (NaNs) with 0 where no match is found
+    merged_df['stock_quantity'] = merged_df['stock_quantity_new'].fillna(0)
+    merged_df.drop(columns=['stock_quantity_old', 'stock_quantity_new'], inplace=True)
+
+    # Result: zsbe_df now contains updated stock quantities (stocks from MB52 transaction)
+    zsbe_df = merged_df
+
+    # Here I ensure that mb52_df looks exactly as it's needed for confi stocks implementation
+    mb52_df = mb52_df[mb52_df['mat_number'].str.startswith('99')].drop(columns=['plant'])
+    # ===== End of MB52 stocks implementation ====
+
     zsdkap_df = pd.read_excel(ZSDKAP_FILE_PATH, sheet_name='Sheet1', dtype=zsdkap_dtypes)
     zsdkap_df['WA-Datum'] = pd.to_datetime(zsdkap_df['WA-Datum'], dayfirst=True, errors='coerce')
     zsdkap_df = zsdkap_df.rename(columns=zsdkap_new_columns_names)
@@ -260,29 +290,11 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     return kpis
 
 
-if __name__ == "__main__":
-    today = datetime.today()
-    today_str = today.strftime('%Y-%m-%d')
-
-    zsdkap = 'zsdkap'
-    zsbe = 'ZSBE_all'
-    mb52 = 'mb52'
-    mb5t = "MB5T_from_2101_to_all_plants"
-
-    horizons = [3, 5, 10]
-
-    lines = ["P100", "M200", "M300", "M320", "M500", "M600"]
-    mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82'), ('L3H', 'L82'), 'L2H', 'LD1', 'LZ1']
-    product_names = [('R4', 'R7', 'R3', 'R5'), ('R4', 'R7', 'R3', 'R5'), ('R6', 'R8'), 'Q4', 'R2', ('ZI', 'KO', 'Li')]  # Product names starts with...
-
-    # lines = ["P100"]
-    # mrp_controllers = ['L1K']
-    # product_names = [('R4', 'R7', 'R3', 'R5')]  # Product names starts with...
-
+def kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs):
     try:
         for line, mrp, prd_name in zip(lines, mrp_controllers, product_names):
             kpis_result = calculate_order_level_KPI(zsdkap_report_name=zsdkap, zsbe_report_name=zsbe, mb52_report_name=mb52, mb5t_report_name=mb5t,
-                                                    horizons=horizons, mrp_controller=mrp, mat_name=prd_name)
+                                                    horizons=horizons, mrp_controller=mrp, mat_name=prd_name, ready_goods_storage_locs=storage_locs)
             kpis_result["LINE"] = line
 
             append_data_to_excel(
@@ -297,4 +309,55 @@ if __name__ == "__main__":
         print("Szczegóły błędu:\n", error_details)
         input("Press Enter...")
 
+
+def wmo_kpis():
+    today = datetime.today()
+    today_str = today.strftime('%Y-%m-%d')
+
+    zsdkap = 'zsdkap'
+    zsbe = 'zsbe_wmo'
+    mb52 = 'mb52'
+    mb5t = "MB5T_from_2101_to_all_plants"
+
+    storage_locs = ('0004', '0005', 'FSC')
+
+    horizons = [3, 5, 10]
+
+    lines = ["P100", "M200", "M300", "M320", "M500", "M600"]
+    mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82'), ('L3H', 'L82'), 'L2H', 'LD1', 'LZ1']
+    product_names = [('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7'), ('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7', 'EFL 4', 'EFL 7'), ('R6', 'R8', 'EFL_R6', 'EFL_R8', 'EFL 6', 'EFL 8'), ('Q4', 'EFL_Q'), 'R2', ('ZI', 'KO', 'Li')]  # Product names starts with...
+
+    # lines = ["P100"]
+    # mrp_controllers = ['L1K']
+    # product_names = [('R4', 'R7', 'R3', 'R5')]  # Product names starts with...
+    kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs)
+
+def wmr_kpis():
+    today = datetime.today()
+    today_str = today.strftime('%Y-%m-%d')
+
+    zsdkap = 'zsdkap'
+    zsbe = 'zsbe_wmr'
+    mb52 = 'mb52'
+    mb5t = "MB5T_from_2101_to_all_plants"
+
+    storage_locs = ('0004', '0005', 'FSC')
+
+    horizons = [3, 5, 10]
+
+    lines = ["ZRV", "ZJA", "ZFA", "ZRI", "ZAR"]
+    mrp_controllers = [('L2E', 'L2V', 'LI1', 'LI3'), ('L2J', 'LI5', 'LI8'), ('L2F', 'LI6'), 'L2I', ('L2B', 'L2R', 'LI2', 'LI4', 'LI7')]
+    product_names = [('ZRE_M', 'ZRE M', 'ZRV_M', 'ZRV M'), ('ZJA', 'ZRE_E', 'ZRE E', 'ZRV_E', 'ZRV E'), 'ZFA', 'ZRI', ('ZAR', 'Auss', 'BHG', 'ZRS')]  # Product names starts with...
+
+    kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs)
+
+
+if __name__ == "__main__":
+
+    department = sys.argv[1]
+    if department == 'wmo':
+        wmo_kpis()
+    elif department == 'wmr':
+        wmr_kpis()
+    # wmo_kpis()
 

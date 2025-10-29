@@ -96,7 +96,7 @@ def append_data_to_excel(status_file, data_dict, error_path, sheet_name):
         # Append the row and save the file
         wb.save(status_file)
 
-        print(f"KPIs updated successfully!")
+        print(f"KPIs updated successfully - {data_dict['LINE']}!")
 
     except Exception as e:
         logging.error("Error occurred", exc_info=True)
