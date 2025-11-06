@@ -119,3 +119,20 @@ def get_nth_working_day(num_of_days: int) -> pd.Timestamp:
         current_date += timedelta(days=1)
 
     return pd.to_datetime(current_date)  # ensures pandas-compatible Timestamp
+
+
+# Custom function to clean number formatting
+def clean_number(value):
+    try:
+        # Zamiana separatorów tysięcy na pusty znak
+        value = value.replace('.', '').replace(',', '.')
+        return float(value)  # Konwersja na float
+    except:
+        return None  # W przypadku błędów (np. inne wartości) zwróć NaN
+
+
+def generate_zsdkap_filename():
+    today_str = datetime.today().strftime("%Y%m%d")
+    filename = f"zsdkap_{today_str}_REP_LU_PPS001A"
+
+    return filename

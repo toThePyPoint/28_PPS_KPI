@@ -3,88 +3,93 @@ import traceback
 from datetime import datetime
 import pandas as pd
 
-from helper_functions import append_data_to_excel, get_nth_working_day
+from helper_functions import append_data_to_excel, get_nth_working_day, clean_number, generate_zsdkap_filename
 
 KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data.xlsx"
 ERROR_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\error.log"
 
 
 zsdkap_dtypes = {
-    'Warenempfänger': 'string',
-    'Materialnummer': 'string',
-    'Artikeltext': 'string',
-    'Auftrag': 'string',
-    'Positionsnummer': 'string',
+    'Odbiorca materia≈Ç√≥w': 'string',
+    'Materia≈Ç': 'string',
+    'Nazwa': 'string',
+    'Dokument sprzeda≈ºy': 'string',
+    'Pozycja': 'string',
     'Kontroler MRP': 'string',
-    'Menge': 'float',
+    'Ilo≈õƒá zlecenia': 'string',
     # 'WA-Datum': 'datetime64[ns]',
 }
 
 zsdkap_new_columns_names = {
-    'Warenempfänger': 'receiver',
-    'Materialnummer': 'mat_number',
-    'Artikeltext': 'mat_description',
-    'Auftrag': 'customer_order_number',
-    'Positionsnummer': 'customer_order_position',
+    'Odbiorca materia≈Ç√≥w': 'receiver',
+    'Materia≈Ç': 'mat_number',
+    'Nazwa': 'mat_description',
+    'Dokument sprzeda≈ºy': 'customer_order_number',
+    'Pozycja': 'customer_order_position',
     'Kontroler MRP': 'mrp_controller',
-    'Menge': 'orders_quantity',
-    'WA-Datum': 'dispatch_date'
+    'Ilo≈õƒá zlecenia': 'orders_quantity',
+    'WADAT': 'dispatch_date'
 }
 
 zsbe_dtypes = {
     'Materiał': 'string',
     'Zakład': 'string',
-    'dowolne użycie': 'float',
-    'zapas bezpieczeństwa': 'float',
+    'Column': 'float',
+    'Column 2': 'float',
 }
 
 zsbe_new_columns_names = {
     'Materiał': 'mat_number',
     'Zakład': 'plant',
-    'dowolne użycie': 'stock_quantity',
+    'Column': 'stock_quantity',
     'Kontroler MRP': 'mrp_controller',
-    'zapas bezpieczeństwa': 'safety_stock',
+    'Column 2': 'safety_stock',
 }
 
-mb5t_dtypes = {
+mb5td_dtypes = {
     'Materiał': 'string',
     'Zakład': 'string',
-    'Ilość zamówienia': 'float',
+    'Ilość': 'float',
     'Pozycja': 'string',
 }
 
-mb5t_new_columns_names = {
+mb5td_new_columns_names = {
     'Materiał': 'mat_number',
     'Zakład': 'plant',
     'Zakład dostarczający': 'supplying_plant',
-    'Ilość zamówienia': 'transit_quantity',
+    'Ilość': 'transit_quantity',
 }
 
 mb52_dtypes = {
     'Materiał': 'string',
-    'Nieogranicz.wykorz.': 'float',
+    'Nieogr. wykorz.': 'float',
     'Dokument SD': 'string',
-    'Pozycja (SD)': 'string',
+    'Pozycja': 'string',
     'Zakład': 'string',
     'Skład': 'string'
 }
 
 mb52_new_columns_names = {
     'Materiał': 'mat_number',
-    'Nieogranicz.wykorz.': 'stock_quantity',
+    'Nieogr. wykorz.': 'stock_quantity',
     'Dokument SD': 'customer_order_number',
-    'Pozycja (SD)': 'customer_order_position',
+    'Pozycja': 'customer_order_position',
     'Zakład': 'plant',
     'Skład': 'storage_location'
 }
 
 
 def create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name):
-    global ZSDKAP_FILE_PATH, ZSBE_FILE_PATH, MB5T_FROM_2101_TO_ALL_PLANTS_FILE_PATH, KPIS_FILE_PATH, MB52_FILE_PATH
-    ZSDKAP_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/{zsdkap_report_name}.xlsx'
-    ZSBE_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/{zsbe_report_name}.xlsx'
-    MB5T_FROM_2101_TO_ALL_PLANTS_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty/28_PPS_KPI\excel_files/{mb5t_report_name}.xlsx'
-    MB52_FILE_PATH = f'C:/Temp/Kamil/Prywatne/07_Programowanie/99_Moje_projekty/28_PPS_KPI/excel_files/{mb52_report_name}.xlsx'
+    global ZSDKAP_FILE_PATH, ZSBE_FILE_PATH, MB5TD_2101, KPIS_FILE_PATH, MB52_FILE_PATH
+    # ZSDKAP_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/job/{zsdkap_report_name}.csv'
+    # ZSBE_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/job/{zsbe_report_name}.xlsx'
+    # MB5TD_2101 = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty/28_PPS_KPI\excel_files/job/{mb5t_report_name}.xlsx'
+    # MB52_FILE_PATH = f'C:/Temp/Kamil/Prywatne/07_Programowanie/99_Moje_projekty/28_PPS_KPI/excel_files/job/{mb52_report_name}.xlsx'
+
+    ZSDKAP_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zsdkap_report_name}.csv'
+    ZSBE_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zsbe_report_name}.xlsx'
+    MB5TD_2101 = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{mb5t_report_name}.xlsx'
+    MB52_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{mb52_report_name}.xlsx'
 
 
 def get_zsdkap_df(mrp_controller, mat_name, df, date_limit=None):
@@ -109,10 +114,16 @@ def get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, df, date_limit=
 
 def get_zsdkap_merged_df(horizons, mrp_controller, mat_name):
     # 1. Load raw data once
-    raw_df = pd.read_excel(ZSDKAP_FILE_PATH, sheet_name='Sheet1', dtype=zsdkap_dtypes)
-    # Convert WA-Datum correctly to datetime
-    raw_df['WA-Datum'] = pd.to_datetime(raw_df['WA-Datum'], dayfirst=True, errors='coerce')
+    # raw_df = pd.read_excel(ZSDKAP_FILE_PATH, sheet_name='Sheet1', dtype=zsdkap_dtypes)
+    # raw_df = pd.read_csv(ZSDKAP_FILE_PATH, dtype=zsdkap_dtypes)
+    # # Convert WA-Datum correctly to datetime
+    # raw_df = raw_df.rename(columns=zsdkap_new_columns_names)
+    # raw_df['dispatch_date'] = pd.to_datetime(raw_df['dispatch_date'], dayfirst=True, errors='coerce')
+
+    raw_df = pd.read_csv(ZSDKAP_FILE_PATH, dtype=zsdkap_dtypes, sep=';', encoding='MacRoman')
     raw_df = raw_df.rename(columns=zsdkap_new_columns_names)
+    raw_df['dispatch_date'] = pd.to_datetime(raw_df['dispatch_date'], dayfirst=True, errors='coerce')
+    raw_df['orders_quantity'] = raw_df['orders_quantity'].apply(clean_number)
 
     # 2. Base (total) dataframe
     zsdkap_total_df = get_zsdkap_df(mrp_controller, mat_name, raw_df)
@@ -135,7 +146,7 @@ def get_zsdkap_merged_df(horizons, mrp_controller, mat_name):
 
 
 def get_zsbe_df(mrp_controller):
-    zsbe_df = pd.read_excel(ZSBE_FILE_PATH, sheet_name='Sheet1', dtype=zsbe_dtypes)
+    zsbe_df = pd.read_excel(ZSBE_FILE_PATH, sheet_name='Exported data', dtype=zsbe_dtypes)
     zsbe_df = zsbe_df.rename(columns=zsbe_new_columns_names)
     zsbe_df = zsbe_df[(zsbe_df['mrp_controller'].isin(mrp_controller)) & (~zsbe_df['mat_number'].str.startswith('99'))]
     zsbe_df = zsbe_df[['mat_number', 'stock_quantity', 'safety_stock']]
@@ -145,8 +156,8 @@ def get_zsbe_df(mrp_controller):
 
 
 def get_mb5t_df():
-    mb5t_df = pd.read_excel(MB5T_FROM_2101_TO_ALL_PLANTS_FILE_PATH, sheet_name='Sheet1', dtype=mb5t_dtypes)
-    mb5t_df = mb5t_df.rename(columns=mb5t_new_columns_names)
+    mb5t_df = pd.read_excel(MB5TD_2101, sheet_name='Exported data', dtype=mb5td_dtypes)
+    mb5t_df = mb5t_df.rename(columns=mb5td_new_columns_names)
     mb5t_df = mb5t_df[['mat_number', 'transit_quantity']]
     mb5t_df = mb5t_df.groupby('mat_number', as_index=False).sum()
 
@@ -154,8 +165,12 @@ def get_mb5t_df():
 
 
 def get_mb52_df():
-    mb52_df = pd.read_excel(MB52_FILE_PATH, sheet_name='Sheet1', dtype=mb52_dtypes)
+    mb52_df = pd.read_excel(MB52_FILE_PATH, sheet_name='Exported data', dtype=mb52_dtypes)
     mb52_df = mb52_df.rename(columns=mb52_new_columns_names)
+
+    mb52_df["customer_order_number"] = (
+        mb52_df["customer_order_number"].str.zfill(10)
+    )
 
     return mb52_df
 
@@ -224,15 +239,22 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     mb52_df = mb52_df[mb52_df['mat_number'].str.startswith('99')].drop(columns=['plant'])
     # ===== End of MB52 stocks implementation ====
 
-    zsdkap_df = pd.read_excel(ZSDKAP_FILE_PATH, sheet_name='Sheet1', dtype=zsdkap_dtypes)
-    zsdkap_df['WA-Datum'] = pd.to_datetime(zsdkap_df['WA-Datum'], dayfirst=True, errors='coerce')
+    # zsdkap_df = pd.read_excel(ZSDKAP_FILE_PATH, sheet_name='Sheet1', dtype=zsdkap_dtypes)
+    # zsdkap_df = zsdkap_df.rename(columns=zsdkap_new_columns_names)
+    # zsdkap_df['dispatch_date'] = pd.to_datetime(zsdkap_df['dispatch_date'], dayfirst=True, errors='coerce')
+    zsdkap_df = pd.read_csv(ZSDKAP_FILE_PATH, dtype=zsdkap_dtypes, sep=';', encoding='MacRoman')
     zsdkap_df = zsdkap_df.rename(columns=zsdkap_new_columns_names)
+    zsdkap_df['dispatch_date'] = pd.to_datetime(zsdkap_df['dispatch_date'], dayfirst=True, errors='coerce')
+
+    # Przetwarzanie konkretnej kolumny
+    zsdkap_df['orders_quantity'] = zsdkap_df['orders_quantity'].apply(clean_number)
+
 
     zsdkap_zsbe_merged_df = pd.merge(zsdkap_merged_df, zsbe_df, on='mat_number', how='outer')
     zsdkap_zsbe_merged_df.fillna(0, inplace=True)
 
     zsdkap_zsbe_mb5t_merged_df = pd.merge(zsdkap_zsbe_merged_df, mb5t_df, on='mat_number', how='left')
-    zsdkap_zsbe_mb5t_merged_df = zsdkap_zsbe_mb5t_merged_df.rename(columns=mb5t_new_columns_names)
+    zsdkap_zsbe_mb5t_merged_df = zsdkap_zsbe_mb5t_merged_df.rename(columns=mb5td_new_columns_names)
     zsdkap_zsbe_mb5t_merged_df.fillna(0, inplace=True)
 
     # Ensure stock quantities for confi items
@@ -314,10 +336,10 @@ def wmo_kpis():
     today = datetime.today()
     today_str = today.strftime('%Y-%m-%d')
 
-    zsdkap = 'zsdkap'
+    zsdkap = generate_zsdkap_filename()
     zsbe = 'zsbe_wmo'
     mb52 = 'mb52'
-    mb5t = "MB5T_from_2101_to_all_plants"
+    mb5t = "MB5TD_2101"
 
     storage_locs = ('0004', '0005', 'FSC')
 
@@ -336,12 +358,12 @@ def wmr_kpis():
     today = datetime.today()
     today_str = today.strftime('%Y-%m-%d')
 
-    zsdkap = 'zsdkap'
+    zsdkap = generate_zsdkap_filename()
     zsbe = 'zsbe_wmr'
     mb52 = 'mb52'
-    mb5t = "MB5T_from_2101_to_all_plants"
+    mb5t = "MB5TD_2101"
 
-    storage_locs = ('0004', '0005', 'FSC')
+    storage_locs = ('0004', '0005', 'FSC', '0003')
 
     horizons = [3, 5, 10]
 
@@ -354,10 +376,10 @@ def wmr_kpis():
 
 if __name__ == "__main__":
 
-    department = sys.argv[1]
-    if department == 'wmo':
-        wmo_kpis()
-    elif department == 'wmr':
-        wmr_kpis()
-    # wmo_kpis()
-
+    # department = sys.argv[1]
+    # if department == 'wmo':
+    #     wmo_kpis()
+    # elif department == 'wmr':
+    #     wmr_kpis()
+    wmo_kpis()
+    wmr_kpis()
