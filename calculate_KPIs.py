@@ -78,9 +78,21 @@ mb52_new_columns_names = {
     'Skład': 'storage_location'
 }
 
+zkbp1_dtypes = {
+    'L.poj.aktiv': 'float',
+    'Zawart pojemn': 'float',
+}
 
-def create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name):
-    global ZSDKAP_FILE_PATH, ZSBE_FILE_PATH, MB5TD_2101, KPIS_FILE_PATH, MB52_FILE_PATH
+zkbp1_new_columns_names = {
+    'NrMat.': 'mat_number',
+    'L.poj.aktiv': 'num_of_containers',
+    'Zawart pojemn': 'container_capacity',
+    'Krótki tekst mater.:': 'mat_name'
+}
+
+
+def create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name, zkbp1_report_name):
+    global ZSDKAP_FILE_PATH, ZSBE_FILE_PATH, MB5TD_2101, KPIS_FILE_PATH, MB52_FILE_PATH, ZKBP1_FILE_PATH
     # ZSDKAP_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/job/{zsdkap_report_name}.csv'
     # ZSBE_FILE_PATH = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty\28_PPS_KPI\excel_files/job/{zsbe_report_name}.xlsx'
     # MB5TD_2101 = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty/28_PPS_KPI\excel_files/job/{mb5t_report_name}.xlsx'
@@ -90,6 +102,7 @@ def create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_re
     ZSBE_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zsbe_report_name}.xlsx'
     MB5TD_2101 = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{mb5t_report_name}.xlsx'
     MB52_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{mb52_report_name}.xlsx'
+    ZKBP1_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zkbp1_report_name}.xlsx'
 
 
 def get_zsdkap_df(mrp_controller, mat_name, df, date_limit=None):
@@ -145,10 +158,29 @@ def get_zsdkap_merged_df(horizons, mrp_controller, mat_name):
     return zsdkap_merged_df
 
 
-def get_zsbe_df(mrp_controller):
+def get_zsbe_df(mrp_controller, include_zkbp1_sb):
     zsbe_df = pd.read_excel(ZSBE_FILE_PATH, sheet_name='Exported data', dtype=zsbe_dtypes)
     zsbe_df = zsbe_df.rename(columns=zsbe_new_columns_names)
     zsbe_df = zsbe_df[(zsbe_df['mrp_controller'].isin(mrp_controller)) & (~zsbe_df['mat_number'].str.startswith('99'))]
+    zsbe_df = zsbe_df[['mat_number', 'stock_quantity', 'safety_stock', 'plant']]
+
+    # TODO: Include safety stocks from ZKBP1 transaction
+    if include_zkbp1_sb:
+        zkbp1_df = pd.read_excel(ZKBP1_FILE_PATH, sheet_name='Exported data', dtype=zkbp1_dtypes)
+        zkbp1_df = zkbp1_df.rename(columns=zkbp1_new_columns_names)
+        zkbp1_df['mat_number'] = zkbp1_df['mat_number'].astype(str)
+        zkbp1_df['safety_stock_kanban'] = zkbp1_df['num_of_containers'] * zkbp1_df['container_capacity']
+        zkbp1_df['plant'] = "0301"
+        zkbp1_df = zkbp1_df[[
+            'mat_number',
+            'safety_stock_kanban',
+            'plant', ]]
+
+        zsbe_zkbp1_merged = pd.merge(zsbe_df, zkbp1_df, on=['mat_number', 'plant'], how='left')
+        zsbe_zkbp1_merged['safety_stock_kanban'] = zsbe_zkbp1_merged['safety_stock_kanban'].fillna(0)
+        zsbe_zkbp1_merged['safety_stock'] = zsbe_zkbp1_merged['safety_stock'] + zsbe_zkbp1_merged['safety_stock_kanban']
+        zsbe_df = zsbe_zkbp1_merged
+
     zsbe_df = zsbe_df[['mat_number', 'stock_quantity', 'safety_stock']]
     zsbe_df = zsbe_df.groupby('mat_number', as_index=False).sum()
 
@@ -182,7 +214,9 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
                               horizons=None,
                               mrp_controller='L1K',
                               mat_name='R4',
-                              ready_goods_storage_locs=('0004', '0005', 'FSC')):
+                              ready_goods_storage_locs=('0004', '0005', 'FSC'),
+                              include_zkbp1_sb=False,
+                              zkbp1_report_name='ZKBP1_SB_0301',):
 
     def calculate_to_be_produced_all(row):
         stock_quantity = row['stock_quantity'] + row['transit_quantity']
@@ -206,12 +240,12 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     if not isinstance(mrp_controller, (list, tuple, set, pd.Series)):
         mrp_controller = [mrp_controller]
 
-    create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name)
+    create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name, zkbp1_report_name)
 
     horizons = horizons
     zsdkap_merged_df = get_zsdkap_merged_df(horizons, mrp_controller, mat_name)
 
-    zsbe_df = get_zsbe_df(mrp_controller)
+    zsbe_df = get_zsbe_df(mrp_controller, include_zkbp1_sb)
     mb5t_df = get_mb5t_df()
     mb52_df = get_mb52_df()
 
@@ -312,18 +346,19 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     return kpis
 
 
-def kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs):
+def kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs, result_file_sheet, include_zkbp1_sb=False, zkbp1_report_name="ZKBP1_SB_0301"):
     try:
         for line, mrp, prd_name in zip(lines, mrp_controllers, product_names):
             kpis_result = calculate_order_level_KPI(zsdkap_report_name=zsdkap, zsbe_report_name=zsbe, mb52_report_name=mb52, mb5t_report_name=mb5t,
-                                                    horizons=horizons, mrp_controller=mrp, mat_name=prd_name, ready_goods_storage_locs=storage_locs)
+                                                    horizons=horizons, mrp_controller=mrp, mat_name=prd_name, ready_goods_storage_locs=storage_locs,
+                                                    include_zkbp1_sb= include_zkbp1_sb, zkbp1_report_name=zkbp1_report_name)
             kpis_result["LINE"] = line
 
             append_data_to_excel(
                 status_file=KPIS_FILE_PATH,
                 data_dict=kpis_result,
                 error_path=ERROR_PATH,
-                sheet_name="LUB"
+                sheet_name=result_file_sheet
             )
     except Exception as e:
         print("Błąd: ", e)
@@ -340,6 +375,7 @@ def wmo_kpis():
     zsbe = 'zsbe_wmo'
     mb52 = 'mb52'
     mb5t = "MB5TD_2101"
+    result_sheet = "LUB"
 
     storage_locs = ('0004', '0005', 'FSC')
 
@@ -352,7 +388,7 @@ def wmo_kpis():
     # lines = ["P100"]
     # mrp_controllers = ['L1K']
     # product_names = [('R4', 'R7', 'R3', 'R5')]  # Product names starts with...
-    kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs)
+    kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs, result_sheet, False)
 
 def wmr_kpis():
     today = datetime.today()
@@ -362,6 +398,7 @@ def wmr_kpis():
     zsbe = 'zsbe_wmr'
     mb52 = 'mb52'
     mb5t = "MB5TD_2101"
+    result_sheet = "LUB"
 
     storage_locs = ('0004', '0005', 'FSC', '0003')
 
@@ -371,15 +408,56 @@ def wmr_kpis():
     mrp_controllers = [('L2E', 'L2V', 'LI1', 'LI3'), ('L2J', 'LI5', 'LI8'), ('L2F', 'LI6'), 'L2I', ('L2B', 'L2R', 'LI2', 'LI4', 'LI7')]
     product_names = [('ZRE_M', 'ZRE M', 'ZRV_M', 'ZRV M'), ('ZJA', 'ZRE_E', 'ZRE E', 'ZRV_E', 'ZRV E'), 'ZFA', 'ZRI', ('ZAR', 'Auss', 'BHG', 'ZRS')]  # Product names starts with...
 
-    kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs)
+    kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs, result_sheet, False)
 
+def mont_kpis():
+    '''
+    BMH KPIs
+    '''
+    today = datetime.today()
+    today_str = today.strftime('%Y-%m-%d')
+
+    zsdkap = generate_zsdkap_filename()
+    zsbe = 'zsbe_mont'
+    mb52 = 'mb52'
+    mb5t = "MB5TD_0301"
+    zkbp1_report_name = "ZKBP1_SB_0301"
+    result_sheet = "LUB"
+
+    storage_locs = ('0004', '0005', 'FSC', '0003', '0007')
+
+    horizons = [3, 5, 10]
+
+    lines = ["WDF68K", "WDFQK", "ZRO", "QR1", "EDR"]
+    mrp_controllers = [
+        ('M81', 'M82'),
+        ('MQ1', 'MQ2'),
+        ('MR1', 'MR2', 'MR3'),
+        "MR4",
+        ('MEB', 'MED', 'MEE', 'MEI', 'MEH', 'MEJ', 'MEM', 'MEN', 'MEX')
+    ]
+
+    product_names = [
+        ('R6', 'R8', 'I8', 'EFL', 'ABR'),
+        ('Q4', 'QRA', 'Qt4', 'EFL', 'ABR'),
+        ('ZRO', 'ZMA'),
+        "ZRO",
+        ('ED', 'EF', 'EA')
+    ]
+    # Product names starts with...
+
+    kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs, result_sheet,
+              True, zkbp1_report_name)
 
 if __name__ == "__main__":
 
-    # department = sys.argv[1]
-    # if department == 'wmo':
-    #     wmo_kpis()
-    # elif department == 'wmr':
-    #     wmr_kpis()
-    wmo_kpis()
-    wmr_kpis()
+    department = sys.argv[1]
+    if department == 'wmo':
+        wmo_kpis()
+    elif department == 'wmr':
+        wmr_kpis()
+    elif department == 'mont':
+        mont_kpis()
+    # mont_kpis()
+    # wmo_kpis()
+    # wmr_kpis()
