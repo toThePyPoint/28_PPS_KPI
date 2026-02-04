@@ -158,13 +158,14 @@ def get_zsdkap_merged_df(horizons, mrp_controller, mat_name):
     return zsdkap_merged_df
 
 
-def get_zsbe_df(mrp_controller, include_zkbp1_sb):
+def get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name):
     zsbe_df = pd.read_excel(ZSBE_FILE_PATH, sheet_name='Exported data', dtype=zsbe_dtypes)
     zsbe_df = zsbe_df.rename(columns=zsbe_new_columns_names)
-    zsbe_df = zsbe_df[(zsbe_df['mrp_controller'].isin(mrp_controller)) & (~zsbe_df['mat_number'].str.startswith('99'))]
-    zsbe_df = zsbe_df[['mat_number', 'stock_quantity', 'safety_stock', 'plant']]
+    zsbe_df = zsbe_df[(zsbe_df['mrp_controller'].isin(mrp_controller)) & (~zsbe_df['mat_number'].str.startswith('99'))
+                      & (zsbe_df['Opis'].str.startswith(mat_name))]
+    zsbe_df = zsbe_df[['mat_number', 'Opis', 'stock_quantity', 'safety_stock', 'plant']]
 
-    # TODO: Include safety stocks from ZKBP1 transaction
+    # Include safety stocks from ZKBP1 transaction
     if include_zkbp1_sb:
         zkbp1_df = pd.read_excel(ZKBP1_FILE_PATH, sheet_name='Exported data', dtype=zkbp1_dtypes)
         zkbp1_df = zkbp1_df.rename(columns=zkbp1_new_columns_names)
@@ -181,8 +182,12 @@ def get_zsbe_df(mrp_controller, include_zkbp1_sb):
         zsbe_zkbp1_merged['safety_stock'] = zsbe_zkbp1_merged['safety_stock'] + zsbe_zkbp1_merged['safety_stock_kanban']
         zsbe_df = zsbe_zkbp1_merged
 
-    zsbe_df = zsbe_df[['mat_number', 'stock_quantity', 'safety_stock']]
-    zsbe_df = zsbe_df.groupby('mat_number', as_index=False).sum()
+    zsbe_df = zsbe_df[['mat_number', 'Opis', 'stock_quantity', 'safety_stock']]
+    zsbe_df = zsbe_df.groupby('mat_number', as_index=False).agg({
+        'Opis': 'first',  # Wybierz pierwszą wartość
+        'stock_quantity': 'sum',
+        'safety_stock': 'sum'
+    })
 
     return zsbe_df
 
@@ -236,16 +241,20 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
         else:
             return 0
 
-    # Ensure mrp_controller is always a list
+    # Ensure mrp_controller is always a tuple
     if not isinstance(mrp_controller, (list, tuple, set, pd.Series)):
-        mrp_controller = [mrp_controller]
+        mrp_controller = mrp_controller,
+
+    # Ensure mat_name is always a tuple
+    if not isinstance(mat_name, (list, tuple, set, pd.Series)):
+        mat_name = mat_name,
 
     create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name, zkbp1_report_name)
 
     horizons = horizons
     zsdkap_merged_df = get_zsdkap_merged_df(horizons, mrp_controller, mat_name)
 
-    zsbe_df = get_zsbe_df(mrp_controller, include_zkbp1_sb)
+    zsbe_df = get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name)
     mb5t_df = get_mb5t_df()
     mb52_df = get_mb52_df()
 
@@ -295,7 +304,7 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df)
     mb52_zsdkap_merged_df = pd.merge(zsdkap_customer_orders_numbers_df, mb52_df, on=('mat_number', 'customer_order_number', 'customer_order_position'), how='inner')
     mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
-    mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity']]
+    mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity', 'Opis']]
 
     merged = pd.merge(zsdkap_zsbe_mb5t_merged_df, mb52_zsdkap_merged_df, on='mat_number', how='left', suffixes=('_zsbe', '_mb52'))
     merged['stock_quantity'] = merged['stock_quantity_zsbe'].fillna(0) + merged['stock_quantity_mb52'].fillna(0)
