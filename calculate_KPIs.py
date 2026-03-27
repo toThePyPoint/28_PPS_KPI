@@ -6,6 +6,7 @@ import pandas as pd
 from helper_functions import append_data_to_excel, get_nth_working_day, clean_number, generate_zsdkap_filename
 
 KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data.xlsx"
+OUTPUT_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\OUTPUT"
 ERROR_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\error.log"
 
 
@@ -351,7 +352,7 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     for h in horizons:
         kpis[f'ORDERS LEVEL (GR C - {h})'] = int(zsdkap_zsbe_mb5t_merged_df[f'to_be_produced_gr_c_{h}_days'].sum())
 
-    zsdkap_zsbe_mb5t_merged_df.to_excel(f"C:/Temp/Kamil/Prywatne/07_Programowanie/99_Moje_projekty/28_PPS_KPI/excel_files/output/output_{'_'.join(mrp_controller)}.xlsx")
+    zsdkap_zsbe_mb5t_merged_df.to_excel(f"{OUTPUT_FILE_PATH}/output_{'_'.join(mrp_controller)}.xlsx")
     return kpis
 
 
@@ -390,9 +391,9 @@ def wmo_kpis():
 
     horizons = [3, 5, 10]
 
-    lines = ["P100", "M200", "M300", "M320", "M500", "M600"]
-    mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82'), ('L3H', 'L82'), 'L2H', 'LD1', 'LZ1']
-    product_names = [('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7'), ('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7', 'EFL 4', 'EFL 7'), ('R6', 'R8', 'EFL_R6', 'EFL_R8', 'EFL 6', 'EFL 8'), ('Q4', 'EFL_Q'), 'R2', ('ZI', 'KO', 'Li')]  # Product names starts with...
+    lines = ["P100", "M200", "M300", "M320", "M500", "M600", "MDA", "ASA"]
+    mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82'), ('L3H', 'L82'), 'L2H', 'LD1', 'LZ1', 'LMD', 'LAS']
+    product_names = [('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7'), ('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7', 'EFL 4', 'EFL 7'), ('R6', 'R8', 'EFL_R6', 'EFL_R8', 'EFL 6', 'EFL 8'), ('Q4', 'EFL_Q'), 'R2', ('ZI', 'KO', 'Li'), ('MDA'), ('ASA', 'ASI')]  # Product names starts with...
 
     # lines = ["P100"]
     # mrp_controllers = ['L1K']
