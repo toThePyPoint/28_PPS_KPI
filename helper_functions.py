@@ -136,3 +136,8 @@ def generate_zsdkap_filename():
     filename = f"zsdkap_{today_str}_REP_LU_PPS001A"
 
     return filename
+
+
+def chunks(lst, size):
+    for i in range(0, len(lst), size):
+        yield lst[i:i+size]
