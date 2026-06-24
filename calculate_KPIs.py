@@ -4,92 +4,24 @@ from datetime import datetime
 import pandas as pd
 
 from helper_functions import append_data_to_excel, get_nth_working_day, clean_number, generate_zsdkap_filename
+from py_rfc_methods import get_delivery_plants_df
+from shipping_logic import get_production_shipping_date
 
 KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data.xlsx"
+# KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data_test.xlsx"
 OUTPUT_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\OUTPUT"
 ERROR_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\error.log"
 
 
-zsdkap_dtypes = {
-    'Odbiorca materia≈Ç√≥w': 'string',
-    'Materia≈Ç': 'string',
-    'Nazwa': 'string',
-    'Dokument sprzeda≈ºy': 'string',
-    'Pozycja': 'string',
-    'Kontroler MRP': 'string',
-    'Ilo≈õƒá zlecenia': 'string',
-    # 'WA-Datum': 'datetime64[ns]',
-}
-
-zsdkap_new_columns_names = {
-    'Odbiorca materia≈Ç√≥w': 'receiver',
-    'Materia≈Ç': 'mat_number',
-    'Nazwa': 'mat_description',
-    'Dokument sprzeda≈ºy': 'customer_order_number',
-    'Pozycja': 'customer_order_position',
-    'Kontroler MRP': 'mrp_controller',
-    'Ilo≈õƒá zlecenia': 'orders_quantity',
-    'WADAT': 'dispatch_date_original'
-}
-
-zsbe_dtypes = {
-    'Materiał': 'string',
-    'Zakład': 'string',
-    'Column': 'float',
-    'Column 2': 'float',
-}
-
-zsbe_new_columns_names = {
-    'Materiał': 'mat_number',
-    'Zakład': 'plant',
-    'Column': 'stock_quantity',
-    'Kontroler MRP': 'mrp_controller',
-    'Column 2': 'safety_stock',
-}
-
-mb5td_dtypes = {
-    'Materiał': 'string',
-    'Zakład': 'string',
-    'Ilość': 'float',
-    'Pozycja': 'string',
-}
-
-mb5td_new_columns_names = {
-    'Materiał': 'mat_number',
-    'Zakład': 'plant',
-    'Zakład dostarczający': 'supplying_plant',
-    'Ilość': 'transit_quantity',
-}
-
-mb52_dtypes = {
-    'Materiał': 'string',
-    'Nieogr. wykorz.': 'float',
-    'Dokument SD': 'string',
-    'Pozycja': 'string',
-    'Zakład': 'string',
-    'Skład': 'string'
-}
-
-mb52_new_columns_names = {
-    'Materiał': 'mat_number',
-    'Nieogr. wykorz.': 'stock_quantity',
-    'Dokument SD': 'customer_order_number',
-    'Pozycja': 'customer_order_position',
-    'Zakład': 'plant',
-    'Skład': 'storage_location'
-}
-
-zkbp1_dtypes = {
-    'L.poj.aktiv': 'float',
-    'Zawart pojemn': 'float',
-}
-
-zkbp1_new_columns_names = {
-    'NrMat.': 'mat_number',
-    'L.poj.aktiv': 'num_of_containers',
-    'Zawart pojemn': 'container_capacity',
-    'Krótki tekst mater.:': 'mat_name'
-}
+from maps import (
+    zsdkap_dtypes, zsdkap_new_columns_names,
+    zsbe_dtypes, zsbe_new_columns_names,
+    mb5td_dtypes, mb5td_new_columns_names,
+    mb52_dtypes, mb52_new_columns_names,
+    zkbp1_dtypes, zkbp1_new_columns_names,
+    vbap_new_columns_names,
+    production_site_map
+)
 
 
 def create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name, zkbp1_report_name):
@@ -126,14 +58,24 @@ def get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, df, date_limit=
     return tmp
 
 
-def get_zsdkap_merged_df(horizons, mrp_controller, mat_name):
-    # 1. Load raw data once
+def load_open_orders_and_adjust_dispatch_date():
     raw_df = pd.read_csv(ZSDKAP_FILE_PATH, dtype=zsdkap_dtypes, sep=';', encoding='MacRoman')
     raw_df['WADAT'] = pd.to_datetime(raw_df['WADAT'], dayfirst=True, errors='coerce')
     raw_df = raw_df.rename(columns=zsdkap_new_columns_names)
+    # raw_df.to_excel(f"{OUTPUT_FILE_PATH}/before-implementation.xlsx")
     # TODO: Here implement dispatch date recalculation
+    raw_df['production_site'] = raw_df['mrp_controller'].apply(lambda mrp: production_site_map.get(mrp))
+    delivery_plants = get_delivery_plants_df(raw_df['customer_order_number'].tolist(), 1000, 100)
+    delivery_plants = delivery_plants.rename(columns=vbap_new_columns_names)
+    raw_df = pd.merge(raw_df, delivery_plants, how='left', on=['customer_order_number', 'customer_order_position'])
+    raw_df.dropna(subset=['production_site', 'delivery_plant'], inplace=True)
+    raw_df['dispatch_date'] = raw_df.apply(
+        lambda row: get_production_shipping_date(row['dispatch_date_original'], row['production_site'],
+                                                 row['delivery_plant']), axis=1)
 
+    return raw_df
 
+def get_zsdkap_merged_df(horizons, mrp_controller, mat_name, raw_df):
     raw_df['orders_quantity'] = raw_df['orders_quantity'].apply(clean_number)
 
     # 2. Base (total) dataframe
@@ -210,16 +152,12 @@ def get_mb52_df():
     return mb52_df
 
 
-def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
-                              zsbe_report_name="ZSBE_L1K",
-                              mb5t_report_name="MB5T_from_2101_to_all_plants",
-                              mb52_report_name="mb52",
-                              horizons=None,
+def calculate_order_level_KPI(horizons=None,
                               mrp_controller='L1K',
                               mat_name='R4',
                               ready_goods_storage_locs=('0004', '0005', 'FSC'),
                               include_zkbp1_sb=False,
-                              zkbp1_report_name='ZKBP1_SB_0301',):
+                              zsdkap_raw_df=None):
 
     def calculate_to_be_produced_all(row):
         stock_quantity = row['stock_quantity'] + row['transit_quantity']
@@ -247,10 +185,10 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     if not isinstance(mat_name, (list, tuple, set, pd.Series)):
         mat_name = mat_name,
 
-    create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name, zkbp1_report_name)
+    # create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_report_name, zkbp1_report_name)
 
     horizons = horizons
-    zsdkap_merged_df = get_zsdkap_merged_df(horizons, mrp_controller, mat_name)
+    zsdkap_merged_df = get_zsdkap_merged_df(horizons, mrp_controller, mat_name, zsdkap_raw_df.copy())
 
     zsbe_df = get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name)
     mb5t_df = get_mb5t_df()
@@ -280,12 +218,7 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
     mb52_df = mb52_df[mb52_df['mat_number'].str.startswith('99')].drop(columns=['plant'])
     # ===== End of MB52 stocks implementation ====
 
-    zsdkap_df = pd.read_csv(ZSDKAP_FILE_PATH, dtype=zsdkap_dtypes, sep=';', encoding='MacRoman')
-    zsdkap_df['WADAT'] = pd.to_datetime(zsdkap_df['WADAT'], dayfirst=True, errors='coerce')
-    zsdkap_df = zsdkap_df.rename(columns=zsdkap_new_columns_names)
-    # TODO: Here implement dispatch dates recalculation
-
-
+    zsdkap_df = zsdkap_raw_df.copy()
 
     # Przetwarzanie konkretnej kolumny
     zsdkap_df['orders_quantity'] = zsdkap_df['orders_quantity'].apply(clean_number)
@@ -293,6 +226,7 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
 
     zsdkap_zsbe_merged_df = pd.merge(zsdkap_merged_df, zsbe_df, on='mat_number', how='outer')
     zsdkap_zsbe_merged_df.fillna(0, inplace=True)
+    # zsdkap_zsbe_merged_df = zsdkap_zsbe_merged_df.fillna(0).infer_objects(copy=False)
 
     zsdkap_zsbe_mb5t_merged_df = pd.merge(zsdkap_zsbe_merged_df, mb5t_df, on='mat_number', how='left')
     zsdkap_zsbe_mb5t_merged_df = zsdkap_zsbe_mb5t_merged_df.rename(columns=mb5td_new_columns_names)
@@ -355,10 +289,12 @@ def calculate_order_level_KPI(zsdkap_report_name="zsdkap",
 
 def kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs, result_file_sheet, include_zkbp1_sb=False, zkbp1_report_name="ZKBP1_SB_0301"):
     try:
+        create_paths(zsdkap, zsbe, mb5t, mb52, zkbp1_report_name)
+        zsdkap_raw_df = load_open_orders_and_adjust_dispatch_date()
+
         for line, mrp, prd_name in zip(lines, mrp_controllers, product_names):
-            kpis_result = calculate_order_level_KPI(zsdkap_report_name=zsdkap, zsbe_report_name=zsbe, mb52_report_name=mb52, mb5t_report_name=mb5t,
-                                                    horizons=horizons, mrp_controller=mrp, mat_name=prd_name, ready_goods_storage_locs=storage_locs,
-                                                    include_zkbp1_sb= include_zkbp1_sb, zkbp1_report_name=zkbp1_report_name)
+            kpis_result = calculate_order_level_KPI(horizons=horizons, mrp_controller=mrp, mat_name=prd_name, ready_goods_storage_locs=storage_locs,
+                                                    include_zkbp1_sb= include_zkbp1_sb, zsdkap_raw_df=zsdkap_raw_df)
             kpis_result["LINE"] = line
 
             append_data_to_excel(

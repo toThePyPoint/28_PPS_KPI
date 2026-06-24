@@ -49,4 +49,6 @@ def get_delivery_plants_df(orders_list, chunk_size=1000, printing_frequency=2):
             columns=["VBELN", "POSNR", "WERKS"]
     )
 
+    vbap_df.drop_duplicates(subset=["VBELN", "POSNR"], keep="first", inplace=True)
+
     return vbap_df
