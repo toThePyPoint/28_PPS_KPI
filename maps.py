@@ -86,6 +86,12 @@ vbap_new_columns_names = {
     'WERKS': 'delivery_plant'
 }
 
+vbbe_new_columns_names = {
+    'VBELN': 'customer_order_number',
+    'POSNR': 'customer_order_position',
+    'SOBKZ': 'special_stock_indicator'
+}
+
 production_site_map = {
     # Production site 2101
     'L1K': '2101',

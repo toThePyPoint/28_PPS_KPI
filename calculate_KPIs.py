@@ -4,11 +4,11 @@ from datetime import datetime
 import pandas as pd
 
 from helper_functions import append_data_to_excel, get_nth_working_day, clean_number, generate_zsdkap_filename
-from py_rfc_methods import get_delivery_plants_df
+from py_rfc_methods import get_delivery_plants_df, get_special_stock_indicators
 from shipping_logic import get_production_shipping_date
 
-KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data.xlsx"
-# KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data_test.xlsx"
+# KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data.xlsx"
+KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data_test.xlsx"
 OUTPUT_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\OUTPUT"
 ERROR_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\error.log"
 
@@ -19,7 +19,7 @@ from maps import (
     mb5td_dtypes, mb5td_new_columns_names,
     mb52_dtypes, mb52_new_columns_names,
     zkbp1_dtypes, zkbp1_new_columns_names,
-    vbap_new_columns_names,
+    vbap_new_columns_names, vbbe_new_columns_names,
     production_site_map
 )
 
@@ -44,7 +44,7 @@ def get_zsdkap_df(mrp_controller, mat_name, df, date_limit=None):
         tmp = tmp[tmp['dispatch_date'] <= date_limit]
 
     tmp = tmp[(tmp['mrp_controller'].isin(mrp_controller)) & (tmp['mat_description'].str.startswith(mat_name))]
-    tmp = tmp[['mat_number', 'orders_quantity']]
+    tmp = tmp[['mat_number', 'orders_quantity', 'customer_order_number', 'customer_order_position']]
     return tmp.groupby('mat_number', as_index=False).sum()
 
 
@@ -75,6 +75,14 @@ def load_open_orders_and_adjust_dispatch_date():
 
     return raw_df
 
+
+def attach_special_stock_indicators(df):
+    sp_stocks_indicator = get_special_stock_indicators(df['customer_order_number'], 1000, 100)
+    sp_stocks_indicator = sp_stocks_indicator.rename(columns=vbbe_new_columns_names)
+    df = pd.merge(df, sp_stocks_indicator, how='left', on=['customer_order_number', 'customer_order_position'])
+
+    return df
+
 def get_zsdkap_merged_df(horizons, mrp_controller, mat_name, raw_df):
     raw_df['orders_quantity'] = raw_df['orders_quantity'].apply(clean_number)
 
@@ -103,7 +111,9 @@ def get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name):
     zsbe_df = zsbe_df.rename(columns=zsbe_new_columns_names)
     zsbe_df = zsbe_df[(zsbe_df['mrp_controller'].isin(mrp_controller)) & (~zsbe_df['mat_number'].str.startswith('99'))
                       & (zsbe_df['Opis'].str.startswith(mat_name))]
-    zsbe_df = zsbe_df[['mat_number', 'Opis', 'stock_quantity', 'safety_stock', 'plant']]
+    zsbe_df = zsbe_df[['mat_number', 'Opis', 'safety_stock', 'plant']]
+    zsbe_df['customer_order_number'] = 'stock_position'
+    zsbe_df['customer_order_position'] = 'stock_position'
 
     # Include safety stocks from ZKBP1 transaction
     if include_zkbp1_sb:
@@ -122,10 +132,11 @@ def get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name):
         zsbe_zkbp1_merged['safety_stock'] = zsbe_zkbp1_merged['safety_stock'] + zsbe_zkbp1_merged['safety_stock_kanban']
         zsbe_df = zsbe_zkbp1_merged
 
-    zsbe_df = zsbe_df[['mat_number', 'Opis', 'stock_quantity', 'safety_stock']]
-    zsbe_df = zsbe_df.groupby('mat_number', as_index=False).agg({
+    zsbe_df = zsbe_df[['mat_number', 'plant', 'Opis', 'safety_stock', 'customer_order_number', 'customer_order_position']]
+    zsbe_df = zsbe_df.groupby(['mat_number', 'plant'], as_index=False).agg({
         'Opis': 'first',  # Wybierz pierwszą wartość
-        'stock_quantity': 'sum',
+        'customer_order_number': 'first',
+        'customer_order_position': 'first',
         'safety_stock': 'sum'
     })
 
@@ -133,6 +144,7 @@ def get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name):
 
 
 def get_mb5t_df():
+    # TODO: Specify correct MB5TD file (either 2101 or 0301)
     mb5t_df = pd.read_excel(MB5TD_2101, sheet_name='Exported data', dtype=mb5td_dtypes)
     mb5t_df = mb5t_df.rename(columns=mb5td_new_columns_names)
     mb5t_df = mb5t_df[['mat_number', 'transit_quantity']]
@@ -197,25 +209,25 @@ def calculate_order_level_KPI(horizons=None,
     # ===== Start of MB52 stocks implementation ====
     # This snippet of code ensures that the stock_quantities data is taken from MB52 transaction instead of ZSBE
     # I excluded confi ('99') items, because there is separate logic for them further, which I don't want to change
-    mb52_df_all_stocks = mb52_df.copy()
-    mb52_df_all_stocks = mb52_df_all_stocks[(mb52_df_all_stocks['storage_location'].isin(ready_goods_storage_locs))
-                                            & (~mb52_df_all_stocks['mat_number'].str.startswith('99'))]
-    mb52_df_all_stocks = mb52_df_all_stocks[['mat_number', 'stock_quantity']]
-    mb52_df_all_stocks = mb52_df_all_stocks.groupby('mat_number', as_index=False).sum()
-
-    # Step 1: Merge the two DataFrames on 'mat_number' (left join to retain zsbe_df's rows)
-    merged_df = pd.merge(zsbe_df, mb52_df_all_stocks, on='mat_number', how='left', suffixes=('_old', '_new'))
-
-    # Step 2: Replace the stock_quantity in zsbe_df with the new stock_quantity
-    # Fill missing values (NaNs) with 0 where no match is found
-    merged_df['stock_quantity'] = merged_df['stock_quantity_new'].fillna(0)
-    merged_df.drop(columns=['stock_quantity_old', 'stock_quantity_new'], inplace=True)
-
-    # Result: zsbe_df now contains updated stock quantities (stocks from MB52 transaction)
-    zsbe_df = merged_df
-
-    # Here I ensure that mb52_df looks exactly as it's needed for confi stocks implementation
-    mb52_df = mb52_df[mb52_df['mat_number'].str.startswith('99')].drop(columns=['plant'])
+    # mb52_df_all_stocks = mb52_df.copy()
+    # mb52_df_all_stocks = mb52_df_all_stocks[(mb52_df_all_stocks['storage_location'].isin(ready_goods_storage_locs))]
+    #                                         # & (~mb52_df_all_stocks['mat_number'].str.startswith('99'))]
+    # mb52_df_all_stocks = mb52_df_all_stocks[['mat_number', 'stock_quantity']]
+    # mb52_df_all_stocks = mb52_df_all_stocks.groupby('mat_number', as_index=False).sum()
+    #
+    # # Step 1: Merge the two DataFrames on 'mat_number' (left join to retain zsbe_df's rows)
+    # merged_df = pd.merge(zsbe_df, mb52_df_all_stocks, on='mat_number', how='left', suffixes=('_old', '_new'))
+    #
+    # # Step 2: Replace the stock_quantity in zsbe_df with the new stock_quantity
+    # # Fill missing values (NaNs) with 0 where no match is found
+    # merged_df['stock_quantity'] = merged_df['stock_quantity_new'].fillna(0)
+    # merged_df.drop(columns=['stock_quantity_old', 'stock_quantity_new'], inplace=True)
+    #
+    # # Result: zsbe_df now contains updated stock quantities (stocks from MB52 transaction)
+    # zsbe_df = merged_df
+    #
+    # # Here I ensure that mb52_df looks exactly as it's needed for confi stocks implementation
+    # mb52_df = mb52_df[mb52_df['mat_number'].str.startswith('99')].drop(columns=['plant'])
     # ===== End of MB52 stocks implementation ====
 
     zsdkap_df = zsdkap_raw_df.copy()
@@ -223,8 +235,8 @@ def calculate_order_level_KPI(horizons=None,
     # Przetwarzanie konkretnej kolumny
     zsdkap_df['orders_quantity'] = zsdkap_df['orders_quantity'].apply(clean_number)
 
-
-    zsdkap_zsbe_merged_df = pd.merge(zsdkap_merged_df, zsbe_df, on='mat_number', how='outer')
+    zsbe_df = zsbe_df.rename(columns={'plant': 'delivery_plant'})
+    zsdkap_zsbe_merged_df = pd.merge(zsdkap_merged_df, zsbe_df, on=['mat_number', 'customer_order_number', 'customer_order_position', 'delivery_plant'], how='outer')
     zsdkap_zsbe_merged_df.fillna(0, inplace=True)
     # zsdkap_zsbe_merged_df = zsdkap_zsbe_merged_df.fillna(0).infer_objects(copy=False)
 
@@ -232,7 +244,7 @@ def calculate_order_level_KPI(horizons=None,
     zsdkap_zsbe_mb5t_merged_df = zsdkap_zsbe_mb5t_merged_df.rename(columns=mb5td_new_columns_names)
     zsdkap_zsbe_mb5t_merged_df.fillna(0, inplace=True)
 
-    # Ensure stock quantities for confi items
+    # Ensure stock quantities for confi items #TODO: extend to all special customer requirements
     zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df)
     mb52_zsdkap_merged_df = pd.merge(zsdkap_customer_orders_numbers_df, mb52_df, on=('mat_number', 'customer_order_number', 'customer_order_position'), how='inner')
     mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
@@ -291,6 +303,7 @@ def kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, h
     try:
         create_paths(zsdkap, zsbe, mb5t, mb52, zkbp1_report_name)
         zsdkap_raw_df = load_open_orders_and_adjust_dispatch_date()
+        zsdkap_raw_df = attach_special_stock_indicators(zsdkap_raw_df)
 
         for line, mrp, prd_name in zip(lines, mrp_controllers, product_names):
             kpis_result = calculate_order_level_KPI(horizons=horizons, mrp_controller=mrp, mat_name=prd_name, ready_goods_storage_locs=storage_locs,
@@ -394,13 +407,13 @@ def mont_kpis():
 
 if __name__ == "__main__":
 
-    department = sys.argv[1]
-    if department == 'wmo':
-        wmo_kpis()
-    elif department == 'wmr':
-        wmr_kpis()
-    elif department == 'mont':
-        mont_kpis()
+    # department = sys.argv[1]
+    # if department == 'wmo':
+    #     wmo_kpis()
+    # elif department == 'wmr':
+    #     wmr_kpis()
+    # elif department == 'mont':
+    #     mont_kpis()
     # mont_kpis()
-    # wmo_kpis()
+    wmo_kpis()
     # wmr_kpis()

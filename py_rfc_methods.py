@@ -39,7 +39,7 @@ def get_delivery_plants_df(orders_list, chunk_size=1000, printing_frequency=2):
 
             if is_printing:
                 print(
-                    f"\nMKPF chunk {chunk_num}/{len(vbeln_chunks)} "
+                    f"\nVBELN chunk {chunk_num}/{len(vbeln_chunks)} "
                     f"| docs={len(vbeln_chunk)}"
                     f"\n Chunk time: {time.perf_counter() - chunk_start:.2f} s"
                 )
@@ -52,3 +52,50 @@ def get_delivery_plants_df(orders_list, chunk_size=1000, printing_frequency=2):
     vbap_df.drop_duplicates(subset=["VBELN", "POSNR"], keep="first", inplace=True)
 
     return vbap_df
+
+
+def get_special_stock_indicators(orders_list, chunk_size=1000, printing_frequency=2):
+    vbeln_chunks = list(chunks(orders_list, chunk_size))
+    vbbe = []
+
+    with get_conn("P11_SSO") as conn:
+
+        for chunk_num, vbeln_chunk in enumerate(vbeln_chunks, start=1):
+            is_printing = chunk_num % printing_frequency == 0
+            chunk_start = time.perf_counter()
+
+            vbeln_filter = " OR ".join(
+                [f"VBELN = '{m}'" for m in vbeln_chunk]
+            )
+
+            vbbe_chunk_data = rfc_read_table(
+                conn=conn,
+                table="VBBE",
+                fields=[
+                    "VBELN",  # zlecenie klienta
+                    "POSNR",  # pozycja
+                    "SOBKZ",  # special stock indicator - "E" for special customer requirements
+                ],
+                where=f"""
+                    {vbeln_filter}
+                """,
+                # rowcount=1500
+            )
+
+            vbbe.extend(vbbe_chunk_data)
+
+            if is_printing:
+                print(
+                    f"\nVBELN chunk {chunk_num}/{len(vbeln_chunks)} "
+                    f"| docs={len(vbeln_chunk)}"
+                    f"\n Chunk time: {time.perf_counter() - chunk_start:.2f} s"
+                )
+
+        vbbe_df = pd.DataFrame(
+            vbbe,
+            columns=["VBELN", "POSNR", "SOBKZ"]
+    )
+
+    vbbe_df.drop_duplicates(subset=["VBELN", "POSNR"], keep="first", inplace=True)
+
+    return vbbe_df
