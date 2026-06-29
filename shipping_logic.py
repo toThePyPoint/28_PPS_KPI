@@ -5,8 +5,8 @@ from datetime import date, timedelta
 TRANSPORT_ROUTES = {
     # Polska -> Francja
     ("2101", "1201"): [
-        {"ship_day": 2, "arrival_day": 1},  # śr -> wt
-        {"ship_day": 4, "arrival_day": 2},  # pt -> śr
+        {"ship_day": 2, "arrival_day": 2},  # śr -> wt (+ 1 dzień na przetwarzanie)
+        {"ship_day": 4, "arrival_day": 3},  # pt -> śr (+ 1 dzień na przetwarzanie)
     ],
 
     # Polska -> Czechy
@@ -37,14 +37,14 @@ TRANSPORT_ROUTES = {
 
         # Niemcy -> Czechy
     ("0301", "3701"): [
-        {"ship_day": 1, "arrival_day": 3},  # wt -> czw
-        {"ship_day": 4, "arrival_day": 1},  # pt -> wt
+        {"ship_day": 1, "arrival_day": 2},  # wt -> śr
+        {"ship_day": 3, "arrival_day": 4},  # czw -> pt
     ],
 
         # Niemcy -> Francja
     ("0301", "1201"): [
-        {"ship_day": 2, "arrival_day": 1},  # śr -> wt
-        {"ship_day": 4, "arrival_day": 2},  # pt -> śr
+        {"ship_day": 1, "arrival_day": 3},  # wt -> śr (+ 1 dzień na przetwarzanie)
+        {"ship_day": 3, "arrival_day": 0},  # czw -> pt (+ 1 dzień na przetwarzanie)
     ],
 }
 

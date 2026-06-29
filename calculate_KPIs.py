@@ -1,10 +1,12 @@
 import sys
 import traceback
 from datetime import datetime
+
+import numpy as np
 import pandas as pd
 
 from helper_functions import append_data_to_excel, get_nth_working_day, clean_number, generate_zsdkap_filename
-from py_rfc_methods import get_delivery_plants_df, get_special_stock_indicators
+from py_rfc_methods import get_delivery_plants_df, get_purchase_order_sales_orders
 from shipping_logic import get_production_shipping_date
 
 # KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data.xlsx"
@@ -13,14 +15,18 @@ OUTPUT_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\
 ERROR_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\error.log"
 
 
+# SAP_SYSTEM = "P11_SSO"
+SAP_SYSTEM = "K11"
+
+
 from maps import (
     zsdkap_dtypes, zsdkap_new_columns_names,
     zsbe_dtypes, zsbe_new_columns_names,
     mb5td_dtypes, mb5td_new_columns_names,
     mb52_dtypes, mb52_new_columns_names,
     zkbp1_dtypes, zkbp1_new_columns_names,
-    vbap_new_columns_names, vbbe_new_columns_names,
-    production_site_map
+    vbap_new_columns_names,
+    production_site_map, ekkn_new_columns_names
 )
 
 
@@ -31,11 +37,17 @@ def create_paths(zsdkap_report_name, zsbe_report_name, mb5t_report_name, mb52_re
     # MB5TD_2101 = fr'C:\Temp\Kamil\Prywatne\07_Programowanie\99_Moje_projekty/28_PPS_KPI\excel_files/job/{mb5t_report_name}.xlsx'
     # MB52_FILE_PATH = f'C:/Temp/Kamil/Prywatne/07_Programowanie/99_Moje_projekty/28_PPS_KPI/excel_files/job/{mb52_report_name}.xlsx'
 
-    ZSDKAP_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zsdkap_report_name}.csv'
-    ZSBE_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zsbe_report_name}.xlsx'
-    MB5TD_2101 = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{mb5t_report_name}.xlsx'
-    MB52_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{mb52_report_name}.xlsx'
-    ZKBP1_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zkbp1_report_name}.xlsx'
+    # ZSDKAP_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zsdkap_report_name}.csv'
+    # ZSBE_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zsbe_report_name}.xlsx'
+    # MB5TD_2101 = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{mb5t_report_name}.xlsx'
+    # MB52_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{mb52_report_name}.xlsx'
+    # ZKBP1_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT/{zkbp1_report_name}.xlsx'
+
+    ZSDKAP_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT\test_k11/{zsdkap_report_name}.csv'
+    ZSBE_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT\test_k11/{zsbe_report_name}.xlsx'
+    MB5TD_2101 = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT\test_k11/{mb5t_report_name}.xlsx'
+    MB52_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT\test_k11/{mb52_report_name}.xlsx'
+    ZKBP1_FILE_PATH = fr'\\rfmesrv5\connect\DST_SAP_Transfer\P11\PPS_LUB\02_MID_TERM_PLANNING_ALIGNMENT\test_k11/{zkbp1_report_name}.xlsx'
 
 
 def get_zsdkap_df(mrp_controller, mat_name, df, date_limit=None):
@@ -44,9 +56,9 @@ def get_zsdkap_df(mrp_controller, mat_name, df, date_limit=None):
         tmp = tmp[tmp['dispatch_date'] <= date_limit]
 
     tmp = tmp[(tmp['mrp_controller'].isin(mrp_controller)) & (tmp['mat_description'].str.startswith(mat_name))]
-    tmp = tmp[['mat_number', 'orders_quantity', 'customer_order_number', 'customer_order_position']]
-    return tmp.groupby('mat_number', as_index=False).sum()
-
+    tmp = tmp[['mat_number', 'orders_quantity', 'customer_order_number', 'customer_order_position', 'delivery_plant', 'mat_description', 'special_stock_indicator']]
+    # return tmp.groupby('mat_number', as_index=False).sum()
+    return tmp
 
 def get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, df, date_limit=None):
     tmp = df.copy()
@@ -58,17 +70,17 @@ def get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, df, date_limit=
     return tmp
 
 
-def load_open_orders_and_adjust_dispatch_date():
-    raw_df = pd.read_csv(ZSDKAP_FILE_PATH, dtype=zsdkap_dtypes, sep=';', encoding='MacRoman')
+def load_open_orders_and_adjust_dispatch_date(file_path):
+    raw_df = pd.read_csv(file_path, dtype=zsdkap_dtypes, sep=';', encoding='MacRoman')
     raw_df['WADAT'] = pd.to_datetime(raw_df['WADAT'], dayfirst=True, errors='coerce')
     raw_df = raw_df.rename(columns=zsdkap_new_columns_names)
-    # raw_df.to_excel(f"{OUTPUT_FILE_PATH}/before-implementation.xlsx")
     # TODO: Here implement dispatch date recalculation
     raw_df['production_site'] = raw_df['mrp_controller'].apply(lambda mrp: production_site_map.get(mrp))
-    delivery_plants = get_delivery_plants_df(raw_df['customer_order_number'].tolist(), 1000, 100)
+    delivery_plants = get_delivery_plants_df(SAP_SYSTEM, raw_df['customer_order_number'].tolist(), 1000, 100)
     delivery_plants = delivery_plants.rename(columns=vbap_new_columns_names)
     raw_df = pd.merge(raw_df, delivery_plants, how='left', on=['customer_order_number', 'customer_order_position'])
     raw_df.dropna(subset=['production_site', 'delivery_plant'], inplace=True)
+    # raw_df.to_excel(f"{OUTPUT_FILE_PATH}/before-implementation.xlsx")
     raw_df['dispatch_date'] = raw_df.apply(
         lambda row: get_production_shipping_date(row['dispatch_date_original'], row['production_site'],
                                                  row['delivery_plant']), axis=1)
@@ -76,16 +88,22 @@ def load_open_orders_and_adjust_dispatch_date():
     return raw_df
 
 
-def attach_special_stock_indicators(df):
-    sp_stocks_indicator = get_special_stock_indicators(df['customer_order_number'], 1000, 100)
-    sp_stocks_indicator = sp_stocks_indicator.rename(columns=vbbe_new_columns_names)
-    df = pd.merge(df, sp_stocks_indicator, how='left', on=['customer_order_number', 'customer_order_position'])
+def fill_general_stock_information(df):
+    df['special_stock_indicator'] = df['special_stock_indicator'].replace('', 'general_stock')
+    # df['customer_order_number_original'] = df['customer_order_number']
+    # df['customer_order_position_original'] = df['customer_order_position']
+    #
+    # # Filter rows where special stock indicator is 'general_stock'
+    # condition = df['special_stock_indicator'] == 'general_stock'
+    #
+    # # Update target columns for the filtered rows
+    # df.loc[condition, ['customer_order_number', 'customer_order_position']] = 'general_stock_position'
 
     return df
 
 def get_zsdkap_merged_df(horizons, mrp_controller, mat_name, raw_df):
     raw_df['orders_quantity'] = raw_df['orders_quantity'].apply(clean_number)
-
+    # TODO: Dopracować logikę merga - konieczne będzie zastąpienie numerów zlec klienta i pozycji zunifikowanym tagiem "general_stock_position"
     # 2. Base (total) dataframe
     zsdkap_total_df = get_zsdkap_df(mrp_controller, mat_name, raw_df)
 
@@ -96,12 +114,13 @@ def get_zsdkap_merged_df(horizons, mrp_controller, mat_name, raw_df):
     for h in horizons:
         df_h = get_zsdkap_df(mrp_controller, mat_name, raw_df, date_limit=get_nth_working_day(h))
         df_h = df_h.rename(columns={'orders_quantity': f'orders_quantity_{h}_days'})
+        df_h = df_h.drop(columns=['mat_description', 'special_stock_indicator'])
         dfs.append(df_h)
 
     # 4. Merge everything
     zsdkap_merged_df = zsdkap_total_df
     for df_h in dfs:
-        zsdkap_merged_df = zsdkap_merged_df.merge(df_h, on='mat_number', how='left')
+        zsdkap_merged_df = zsdkap_merged_df.merge(df_h, on=['mat_number', 'customer_order_number', 'customer_order_position', 'delivery_plant'], how='left')
 
     return zsdkap_merged_df
 
@@ -110,10 +129,10 @@ def get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name):
     zsbe_df = pd.read_excel(ZSBE_FILE_PATH, sheet_name='Exported data', dtype=zsbe_dtypes)
     zsbe_df = zsbe_df.rename(columns=zsbe_new_columns_names)
     zsbe_df = zsbe_df[(zsbe_df['mrp_controller'].isin(mrp_controller)) & (~zsbe_df['mat_number'].str.startswith('99'))
-                      & (zsbe_df['Opis'].str.startswith(mat_name))]
-    zsbe_df = zsbe_df[['mat_number', 'Opis', 'safety_stock', 'plant']]
-    zsbe_df['customer_order_number'] = 'stock_position'
-    zsbe_df['customer_order_position'] = 'stock_position'
+                      & (zsbe_df['mat_description'].str.startswith(mat_name))]
+    zsbe_df = zsbe_df[['mat_number', 'mat_description', 'safety_stock', 'plant']]
+    zsbe_df['customer_order_number'] = 'general_stock_position'
+    zsbe_df['customer_order_position'] = 'general_stock_position'
 
     # Include safety stocks from ZKBP1 transaction
     if include_zkbp1_sb:
@@ -132,9 +151,9 @@ def get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name):
         zsbe_zkbp1_merged['safety_stock'] = zsbe_zkbp1_merged['safety_stock'] + zsbe_zkbp1_merged['safety_stock_kanban']
         zsbe_df = zsbe_zkbp1_merged
 
-    zsbe_df = zsbe_df[['mat_number', 'plant', 'Opis', 'safety_stock', 'customer_order_number', 'customer_order_position']]
+    zsbe_df = zsbe_df[['mat_number', 'plant', 'mat_description', 'safety_stock', 'customer_order_number', 'customer_order_position']]
     zsbe_df = zsbe_df.groupby(['mat_number', 'plant'], as_index=False).agg({
-        'Opis': 'first',  # Wybierz pierwszą wartość
+        'mat_description': 'first',  # Wybierz pierwszą wartość
         'customer_order_number': 'first',
         'customer_order_position': 'first',
         'safety_stock': 'sum'
@@ -147,8 +166,15 @@ def get_mb5t_df():
     # TODO: Specify correct MB5TD file (either 2101 or 0301)
     mb5t_df = pd.read_excel(MB5TD_2101, sheet_name='Exported data', dtype=mb5td_dtypes)
     mb5t_df = mb5t_df.rename(columns=mb5td_new_columns_names)
-    mb5t_df = mb5t_df[['mat_number', 'transit_quantity']]
-    mb5t_df = mb5t_df.groupby('mat_number', as_index=False).sum()
+
+    po_list = mb5t_df[mb5t_df['special_stock_indicator'] == 'E']['purchase_order_number'].tolist()
+    sales_orders = get_purchase_order_sales_orders(SAP_SYSTEM, po_list)
+    sales_orders = sales_orders.rename(columns=ekkn_new_columns_names)
+
+    mb5t_df = mb5t_df.merge(sales_orders, how='left', on=['purchase_order_number', 'purchase_order_position'])
+
+    mb5t_df = mb5t_df[['mat_number', 'transit_quantity', 'customer_order_number', 'customer_order_position', 'plant']]
+    # mb5t_df = mb5t_df.groupby('mat_number', as_index=False).sum()
 
     return mb5t_df
 
@@ -159,6 +185,9 @@ def get_mb52_df():
 
     mb52_df["customer_order_number"] = (
         mb52_df["customer_order_number"].str.zfill(10)
+    )
+    mb52_df["customer_order_position"] = (
+        mb52_df["customer_order_position"].str.zfill(6)
     )
 
     return mb52_df
@@ -201,7 +230,8 @@ def calculate_order_level_KPI(horizons=None,
 
     horizons = horizons
     zsdkap_merged_df = get_zsdkap_merged_df(horizons, mrp_controller, mat_name, zsdkap_raw_df.copy())
-
+    # TODO: delete debug print:
+    # zsdkap_merged_df.to_excel(r'excel_files\bq–issue–tests\zsdkap_merged_df.xlsx', index=False)
     zsbe_df = get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name)
     mb5t_df = get_mb5t_df()
     mb52_df = get_mb52_df()
@@ -236,19 +266,41 @@ def calculate_order_level_KPI(horizons=None,
     zsdkap_df['orders_quantity'] = zsdkap_df['orders_quantity'].apply(clean_number)
 
     zsbe_df = zsbe_df.rename(columns={'plant': 'delivery_plant'})
+
     zsdkap_zsbe_merged_df = pd.merge(zsdkap_merged_df, zsbe_df, on=['mat_number', 'customer_order_number', 'customer_order_position', 'delivery_plant'], how='outer')
+
+    zsdkap_zsbe_merged_df['mat_description'] = (
+        zsdkap_zsbe_merged_df['mat_description_x']
+        .combine_first(zsdkap_zsbe_merged_df['mat_description_y'])
+    )
+
+    zsdkap_zsbe_merged_df.drop(
+        columns=['mat_description_x', 'mat_description_y'],
+        inplace=True
+    )
+    zsdkap_zsbe_merged_df.to_excel(r'excel_files\bq–issue–tests\zsdkap_zsbe_merged_df.xlsx', index=False)
+    zsdkap_zsbe_merged_df['special_stock_indicator'] = zsdkap_zsbe_merged_df['special_stock_indicator'].replace('', pd.NA).fillna('general_stock')
     zsdkap_zsbe_merged_df.fillna(0, inplace=True)
     # zsdkap_zsbe_merged_df = zsdkap_zsbe_merged_df.fillna(0).infer_objects(copy=False)
 
-    zsdkap_zsbe_mb5t_merged_df = pd.merge(zsdkap_zsbe_merged_df, mb5t_df, on='mat_number', how='left')
-    zsdkap_zsbe_mb5t_merged_df = zsdkap_zsbe_mb5t_merged_df.rename(columns=mb5td_new_columns_names)
+    mb5t_df.rename(columns={'plant': 'delivery_plant'}, inplace=True)
+    mb5t_df[['customer_order_number', 'customer_order_position']] = (
+        mb5t_df[['customer_order_number', 'customer_order_position']]
+        .replace('', pd.NA)
+        .fillna('general_stock_position')
+    )
+    mb5t_df.to_excel(r'excel_files\bq–issue–tests\mb5t_df.xlsx', index=False)
+
+    zsdkap_zsbe_mb5t_merged_df = pd.merge(zsdkap_zsbe_merged_df, mb5t_df, on=['mat_number', 'customer_order_number', 'customer_order_position', 'delivery_plant'], how='left')
+    # zsdkap_zsbe_mb5t_merged_df = zsdkap_zsbe_mb5t_merged_df.rename(columns=mb5td_new_columns_names)
     zsdkap_zsbe_mb5t_merged_df.fillna(0, inplace=True)
+    zsdkap_zsbe_mb5t_merged_df.to_excel(r'excel_files\bq–issue–tests\zsdkap_zsbe_mb5t_merged_df.xlsx', index=False)
 
     # Ensure stock quantities for confi items #TODO: extend to all special customer requirements
     zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df)
     mb52_zsdkap_merged_df = pd.merge(zsdkap_customer_orders_numbers_df, mb52_df, on=('mat_number', 'customer_order_number', 'customer_order_position'), how='inner')
     mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
-    mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity', 'Opis']]
+    mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity', 'mat_description']]
 
     merged = pd.merge(zsdkap_zsbe_mb5t_merged_df, mb52_zsdkap_merged_df, on='mat_number', how='left', suffixes=('_zsbe', '_mb52'))
     merged['stock_quantity'] = merged['stock_quantity_zsbe'].fillna(0) + merged['stock_quantity_mb52'].fillna(0)
@@ -301,9 +353,10 @@ def calculate_order_level_KPI(horizons=None,
 
 def kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs, result_file_sheet, include_zkbp1_sb=False, zkbp1_report_name="ZKBP1_SB_0301"):
     try:
+        # zsdkap = 'zsdkap_20260624_REP_LU_PPS001A' # TODO: Delete
         create_paths(zsdkap, zsbe, mb5t, mb52, zkbp1_report_name)
-        zsdkap_raw_df = load_open_orders_and_adjust_dispatch_date()
-        zsdkap_raw_df = attach_special_stock_indicators(zsdkap_raw_df)
+        zsdkap_raw_df = load_open_orders_and_adjust_dispatch_date(ZSDKAP_FILE_PATH)
+        zsdkap_raw_df = fill_general_stock_information(zsdkap_raw_df)
 
         for line, mrp, prd_name in zip(lines, mrp_controllers, product_names):
             kpis_result = calculate_order_level_KPI(horizons=horizons, mrp_controller=mrp, mat_name=prd_name, ready_goods_storage_locs=storage_locs,
@@ -337,13 +390,13 @@ def wmo_kpis():
 
     horizons = [3, 5, 10]
 
-    lines = ["P100", "M200", "M300", "M320", "M500", "M600", "MDA", "ASA"]
-    mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82', 'L11'), ('L3H', 'L82', 'L11'), ('L2H', 'L11'), 'LD1', 'LZ1', 'LMD', 'LAS']
-    product_names = [('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7'), ('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7', 'EFL 4', 'EFL 7'), ('R6', 'R8', 'EFL_R6', 'EFL_R8', 'EFL 6', 'EFL 8'), ('Q4', 'EFL_Q'), 'R2', ('ZI', 'KO', 'Li'), ('MDA'), ('ASA', 'ASI')]  # Product names starts with...
+    # lines = ["P100", "M200", "M300", "M320", "M500", "M600", "MDA", "ASA"]
+    # mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82', 'L11'), ('L3H', 'L82', 'L11'), ('L2H', 'L11'), 'LD1', 'LZ1', 'LMD', 'LAS']
+    # product_names = [('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7'), ('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7', 'EFL 4', 'EFL 7'), ('R6', 'R8', 'EFL_R6', 'EFL_R8', 'EFL 6', 'EFL 8'), ('Q4', 'EFL_Q'), 'R2', ('ZI', 'KO', 'Li'), ('MDA'), ('ASA', 'ASI')]  # Product names starts with...
 
-    # lines = ["P100"]
-    # mrp_controllers = ['L1K']
-    # product_names = [('R4', 'R7', 'R3', 'R5')]  # Product names starts with...
+    lines = ["M200"]
+    mrp_controllers = [('L1H', 'L41', 'L3H', 'L82', 'L11')]
+    product_names = [('R4', 'R7', 'R3', 'R5')]  # Product names starts with...
     kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs, result_sheet, False)
 
 def wmr_kpis():

@@ -34,12 +34,14 @@ zsbe_new_columns_names = {
     'Column': 'stock_quantity',
     'Kontroler MRP': 'mrp_controller',
     'Column 2': 'safety_stock',
+    'Opis': 'mat_description'
 }
 
 mb5td_dtypes = {
     'Materiał': 'string',
     'Zakład': 'string',
     'Ilość': 'float',
+    'Dok.zaopatrz.': 'string',
     'Pozycja': 'string',
 }
 
@@ -48,6 +50,9 @@ mb5td_new_columns_names = {
     'Zakład': 'plant',
     'Zakład dostarczający': 'supplying_plant',
     'Ilość': 'transit_quantity',
+    'Zapas specjalny': 'special_stock_indicator',
+    'Dok.zaopatrz.': 'purchase_order_number',
+    'Pozycja': 'purchase_order_position'
 }
 
 mb52_dtypes = {
@@ -83,13 +88,15 @@ zkbp1_new_columns_names = {
 vbap_new_columns_names = {
     'VBELN': 'customer_order_number',
     'POSNR': 'customer_order_position',
-    'WERKS': 'delivery_plant'
+    'WERKS': 'delivery_plant',
+    'SOBKZ': 'special_stock_indicator'
 }
 
-vbbe_new_columns_names = {
+ekkn_new_columns_names = {
+    "EBELN": "purchase_order_number",
+    "EBELP": 'purchase_order_position',
     'VBELN': 'customer_order_number',
-    'POSNR': 'customer_order_position',
-    'SOBKZ': 'special_stock_indicator'
+    'VBELP': 'customer_order_position'
 }
 
 production_site_map = {
