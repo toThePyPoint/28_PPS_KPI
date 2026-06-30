@@ -34,12 +34,14 @@ zsbe_new_columns_names = {
     'Column': 'stock_quantity',
     'Kontroler MRP': 'mrp_controller',
     'Column 2': 'safety_stock',
+    'Opis': 'mat_description'
 }
 
 mb5td_dtypes = {
     'Materiał': 'string',
     'Zakład': 'string',
     'Ilość': 'float',
+    'Dok.zaopatrz.': 'string',
     'Pozycja': 'string',
 }
 
@@ -48,6 +50,9 @@ mb5td_new_columns_names = {
     'Zakład': 'plant',
     'Zakład dostarczający': 'supplying_plant',
     'Ilość': 'transit_quantity',
+    'Zapas specjalny': 'special_stock_indicator',
+    'Dok.zaopatrz.': 'purchase_order_number',
+    'Pozycja': 'purchase_order_position'
 }
 
 mb52_dtypes = {
@@ -64,7 +69,7 @@ mb52_new_columns_names = {
     'Nieogr. wykorz.': 'stock_quantity',
     'Dokument SD': 'customer_order_number',
     'Pozycja': 'customer_order_position',
-    'Zakład': 'plant',
+    'Zakład': 'delivery_plant',   # I use that name (delivery_plant instead of plant) so that naming in complete program logic is coherent
     'Skład': 'storage_location'
 }
 
@@ -83,7 +88,15 @@ zkbp1_new_columns_names = {
 vbap_new_columns_names = {
     'VBELN': 'customer_order_number',
     'POSNR': 'customer_order_position',
-    'WERKS': 'delivery_plant'
+    'WERKS': 'delivery_plant',
+    'SOBKZ': 'special_stock_indicator'
+}
+
+ekkn_new_columns_names = {
+    "EBELN": "purchase_order_number",
+    "EBELP": 'purchase_order_position',
+    'VBELN': 'customer_order_number',
+    'VBELP': 'customer_order_position'
 }
 
 production_site_map = {
