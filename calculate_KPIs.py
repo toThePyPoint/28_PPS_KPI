@@ -148,7 +148,7 @@ def get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name):
         'mat_description': 'first',  # Wybierz pierwszą wartość
         'customer_order_number': 'first',
         'customer_order_position': 'first',
-        'safety_stock': 'sum'
+        'safety_stock': 'first'
     })
 
     return zsbe_df
@@ -165,6 +165,20 @@ def get_mb5t_df():
 
     mb5t_df = mb5t_df.merge(sales_orders, how='left', on=['purchase_order_number', 'purchase_order_position'])
 
+    mb5t_df = mb5t_df[mb5t_df['transit_quantity'] > 0]
+
+    special_stock_df = mb5t_df[mb5t_df['special_stock_indicator'] == 'E']
+    general_stock_df = (
+        mb5t_df[mb5t_df['special_stock_indicator'] != 'E']
+        .groupby(['plant', 'mat_number'], as_index=False)
+        .agg({
+            'transit_quantity': 'sum',
+            'customer_order_number': 'first',
+            'customer_order_position': 'first',
+        })
+    )
+
+    mb5t_df = pd.concat([special_stock_df, general_stock_df], ignore_index=True)
     mb5t_df = mb5t_df[['mat_number', 'transit_quantity', 'customer_order_number', 'customer_order_position', 'plant']]
 
     return mb5t_df
@@ -238,7 +252,7 @@ def calculate_order_level_KPI(horizons=None,
     zsbe_df = zsbe_df.rename(columns={'plant': 'delivery_plant'})
 
     zsdkap_zsbe_merged_df = pd.merge(zsdkap_merged_df, zsbe_df, on=['mat_number', 'customer_order_number', 'customer_order_position', 'delivery_plant'], how='outer')
-
+    # zsdkap_zsbe_merged_df.to_excel(r'excel_files\bq–issue–tests\zsdkap_zsbe_merged_df.xlsx', index=False)
     zsdkap_zsbe_merged_df['mat_description'] = (
         zsdkap_zsbe_merged_df['mat_description_x']
         .combine_first(zsdkap_zsbe_merged_df['mat_description_y'])
@@ -368,9 +382,9 @@ def wmo_kpis():
     mrp_controllers = ['L1K', ('L1H', 'L41', 'L3H', 'L82', 'L11'), ('L3H', 'L82', 'L11'), ('L2H', 'L11'), 'LD1', 'LZ1', 'LMD', 'LAS']
     product_names = [('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7'), ('R4', 'R7', 'R3', 'R5', 'EFL_R4', 'EFL_R7', 'EFL 4', 'EFL 7'), ('R6', 'R8', 'EFL_R6', 'EFL_R8', 'EFL 6', 'EFL 8'), ('Q4', 'EFL_Q'), 'R2', ('ZI', 'KO', 'Li'), ('MDA'), ('ASA', 'ASI')]  # Product names starts with...
 
-    # lines = ["M200"]
-    # mrp_controllers = [('L1H', 'L41', 'L3H', 'L82', 'L11')]
-    # product_names = [('R4', 'R7', 'R3', 'R5')]  # Product names starts with...
+    # lines = ["MDA"]
+    # mrp_controllers = [('LMD')]
+    # product_names = [('MDA')]  # Product names starts with...
     kpis_loop(lines, mrp_controllers, product_names, zsdkap, zsbe, mb52, mb5t, horizons, storage_locs, result_sheet, False)
 
 def wmr_kpis():
