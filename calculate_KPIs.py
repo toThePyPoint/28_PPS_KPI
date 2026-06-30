@@ -179,7 +179,7 @@ def get_mb5t_df():
     return mb5t_df
 
 
-def get_mb52_df():
+def get_mb52_df(storage_locs):
     mb52_df = pd.read_excel(MB52_FILE_PATH, sheet_name='Exported data', dtype=mb52_dtypes)
     mb52_df = mb52_df.rename(columns=mb52_new_columns_names)
 
@@ -189,6 +189,8 @@ def get_mb52_df():
     mb52_df["customer_order_position"] = (
         mb52_df["customer_order_position"].str.zfill(6)
     )
+
+    mb52_df = mb52_df[mb52_df['storage_location'].isin(storage_locs)]
 
     return mb52_df
 
@@ -234,7 +236,7 @@ def calculate_order_level_KPI(horizons=None,
     # zsdkap_merged_df.to_excel(r'excel_files\bq–issue–tests\zsdkap_merged_df.xlsx', index=False)
     zsbe_df = get_zsbe_df(mrp_controller, include_zkbp1_sb, mat_name)
     mb5t_df = get_mb5t_df()
-    mb52_df = get_mb52_df()
+    mb52_df = get_mb52_df(ready_goods_storage_locs)
 
     # ===== Start of MB52 stocks implementation ====
     # This snippet of code ensures that the stock_quantities data is taken from MB52 transaction instead of ZSBE
@@ -294,19 +296,58 @@ def calculate_order_level_KPI(horizons=None,
     zsdkap_zsbe_mb5t_merged_df = pd.merge(zsdkap_zsbe_merged_df, mb5t_df, on=['mat_number', 'customer_order_number', 'customer_order_position', 'delivery_plant'], how='left')
     # zsdkap_zsbe_mb5t_merged_df = zsdkap_zsbe_mb5t_merged_df.rename(columns=mb5td_new_columns_names)
     zsdkap_zsbe_mb5t_merged_df.fillna(0, inplace=True)
-    zsdkap_zsbe_mb5t_merged_df.to_excel(r'excel_files\bq–issue–tests\zsdkap_zsbe_mb5t_merged_df.xlsx', index=False)
 
     # Ensure stock quantities for confi items #TODO: extend to all special customer requirements
-    zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df)
-    mb52_zsdkap_merged_df = pd.merge(zsdkap_customer_orders_numbers_df, mb52_df, on=('mat_number', 'customer_order_number', 'customer_order_position'), how='inner')
-    mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
-    mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity', 'mat_description']]
+    # zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df)
+    # mb52_zsdkap_merged_df = pd.merge(zsdkap_customer_orders_numbers_df, mb52_df, on=('mat_number', 'customer_order_number', 'customer_order_position'), how='inner')
+    # mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
+    # mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity', 'mat_description']]
 
-    merged = pd.merge(zsdkap_zsbe_mb5t_merged_df, mb52_zsdkap_merged_df, on='mat_number', how='left', suffixes=('_zsbe', '_mb52'))
-    merged['stock_quantity'] = merged['stock_quantity_zsbe'].fillna(0) + merged['stock_quantity_mb52'].fillna(0)
+    # TODO: Add appropriate grouping for MB52 general stocks (by mat num and plant)
+    mb52_special_stocks_df = mb52_df[~mb52_df['customer_order_number'].isna()][['customer_order_number', 'customer_order_position', 'delivery_plant', 'mat_number', 'stock_quantity']].copy()
+    mb52_general_stocks_df = mb52_df[mb52_df['customer_order_number'].isna()][['delivery_plant', 'mat_number', 'stock_quantity']].copy()
+    mb52_general_stocks_df = mb52_general_stocks_df.groupby(['mat_number', 'delivery_plant'], as_index=False).agg({"stock_quantity": "sum"})
+
+    # zsdkap_zsbe_mb5t_merged_df.groupby(['mat_number', 'delivery_plant'], as_index=False).agg({""})
+    agg_dict = {
+        col: 'sum' if pd.api.types.is_numeric_dtype(zsdkap_zsbe_mb5t_merged_df[col]) else 'first'
+        for col in zsdkap_zsbe_mb5t_merged_df.columns
+        if col not in ['mat_number', 'delivery_plant']
+    }
+
+    general_stock_df = (
+        zsdkap_zsbe_mb5t_merged_df[
+            zsdkap_zsbe_mb5t_merged_df['special_stock_indicator'] == 'general_stock'
+            ]
+        .groupby(['mat_number', 'delivery_plant'], as_index=False)
+        .agg(agg_dict)
+    )
+
+    merged_general_stock_df = pd.merge(general_stock_df, mb52_general_stocks_df, on=['mat_number', 'delivery_plant'], how='left')
+
+    special_stock_df = zsdkap_zsbe_mb5t_merged_df[
+        zsdkap_zsbe_mb5t_merged_df['special_stock_indicator'] != 'general_stock'
+        ]
+
+    merged_special_stock_df = pd.merge(special_stock_df, mb52_special_stocks_df, on=['mat_number', 'customer_order_number', 'customer_order_position'], how='left')
+
+    zsdkap_zsbe_mb5t_mb52_merged_df = pd.concat(
+        [merged_general_stock_df, merged_special_stock_df],
+        ignore_index=True
+    )
+
+    zsdkap_zsbe_mb5t_mb52_merged_df.to_excel(r'excel_files\bq–issue–tests\zsdkap_zsbe_mb5t_mb52_merged_df.xlsx', index=False)
+
+    merged = zsdkap_zsbe_mb5t_mb52_merged_df.drop(columns=['delivery_plant_x', 'delivery_plant_y'])
+    mask = (merged['special_stock_indicator'] == 'general_stock') & (merged['customer_order_number'] != 'general_stock_position')
+    merged.loc[mask, ['customer_order_number', 'customer_order_position']] = 'grouped_orders'
+
+    merged.to_excel(r'excel_files\bq–issue–tests\merged.xlsx', index=False)
+    # merged = pd.merge(zsdkap_zsbe_mb5t_merged_df, mb52_zsdkap_merged_df, on='mat_number', how='left', suffixes=('_zsbe', '_mb52'))
+    # merged['stock_quantity'] = merged['stock_quantity_zsbe'].fillna(0) + merged['stock_quantity_mb52'].fillna(0)
 
     # Drop the temporary columns
-    merged = merged.drop(columns=['stock_quantity_mb52'])
+    # merged = merged.drop(columns=['delivery_plant_x', 'delivery_plant_y'])
 
     for h in horizons:
         zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df,

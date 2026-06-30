@@ -69,7 +69,7 @@ mb52_new_columns_names = {
     'Nieogr. wykorz.': 'stock_quantity',
     'Dokument SD': 'customer_order_number',
     'Pozycja': 'customer_order_position',
-    'Zakład': 'plant',
+    'Zakład': 'delivery_plant',   # I use that name (delivery_plant instead of plant) so that naming in complete program logic is coherent
     'Skład': 'storage_location'
 }
 
