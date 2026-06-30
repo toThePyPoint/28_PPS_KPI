@@ -9,8 +9,8 @@ from helper_functions import append_data_to_excel, get_nth_working_day, clean_nu
 from py_rfc_methods import get_delivery_plants_df, get_purchase_order_sales_orders
 from shipping_logic import get_production_shipping_date
 
-# KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data.xlsx"
-KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data_test.xlsx"
+KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data.xlsx"
+# KPIS_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\KPIs_source_data_test.xlsx"
 OUTPUT_FILE_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\OUTPUT"
 ERROR_PATH = r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\07_PPS_KPIs\error.log"
 
@@ -90,14 +90,6 @@ def load_open_orders_and_adjust_dispatch_date(file_path):
 
 def fill_general_stock_information(df):
     df['special_stock_indicator'] = df['special_stock_indicator'].replace('', 'general_stock')
-    # df['customer_order_number_original'] = df['customer_order_number']
-    # df['customer_order_position_original'] = df['customer_order_position']
-    #
-    # # Filter rows where special stock indicator is 'general_stock'
-    # condition = df['special_stock_indicator'] == 'general_stock'
-    #
-    # # Update target columns for the filtered rows
-    # df.loc[condition, ['customer_order_number', 'customer_order_position']] = 'general_stock_position'
 
     return df
 
@@ -174,7 +166,6 @@ def get_mb5t_df():
     mb5t_df = mb5t_df.merge(sales_orders, how='left', on=['purchase_order_number', 'purchase_order_position'])
 
     mb5t_df = mb5t_df[['mat_number', 'transit_quantity', 'customer_order_number', 'customer_order_position', 'plant']]
-    # mb5t_df = mb5t_df.groupby('mat_number', as_index=False).sum()
 
     return mb5t_df
 
@@ -239,30 +230,6 @@ def calculate_order_level_KPI(horizons=None,
     mb5t_df = get_mb5t_df()
     mb52_df = get_mb52_df(ready_goods_storage_locs)
 
-    # ===== Start of MB52 stocks implementation ====
-    # This snippet of code ensures that the stock_quantities data is taken from MB52 transaction instead of ZSBE
-    # I excluded confi ('99') items, because there is separate logic for them further, which I don't want to change
-    # mb52_df_all_stocks = mb52_df.copy()
-    # mb52_df_all_stocks = mb52_df_all_stocks[(mb52_df_all_stocks['storage_location'].isin(ready_goods_storage_locs))]
-    #                                         # & (~mb52_df_all_stocks['mat_number'].str.startswith('99'))]
-    # mb52_df_all_stocks = mb52_df_all_stocks[['mat_number', 'stock_quantity']]
-    # mb52_df_all_stocks = mb52_df_all_stocks.groupby('mat_number', as_index=False).sum()
-    #
-    # # Step 1: Merge the two DataFrames on 'mat_number' (left join to retain zsbe_df's rows)
-    # merged_df = pd.merge(zsbe_df, mb52_df_all_stocks, on='mat_number', how='left', suffixes=('_old', '_new'))
-    #
-    # # Step 2: Replace the stock_quantity in zsbe_df with the new stock_quantity
-    # # Fill missing values (NaNs) with 0 where no match is found
-    # merged_df['stock_quantity'] = merged_df['stock_quantity_new'].fillna(0)
-    # merged_df.drop(columns=['stock_quantity_old', 'stock_quantity_new'], inplace=True)
-    #
-    # # Result: zsbe_df now contains updated stock quantities (stocks from MB52 transaction)
-    # zsbe_df = merged_df
-    #
-    # # Here I ensure that mb52_df looks exactly as it's needed for confi stocks implementation
-    # mb52_df = mb52_df[mb52_df['mat_number'].str.startswith('99')].drop(columns=['plant'])
-    # ===== End of MB52 stocks implementation ====
-
     zsdkap_df = zsdkap_raw_df.copy()
 
     # Przetwarzanie konkretnej kolumny
@@ -284,7 +251,6 @@ def calculate_order_level_KPI(horizons=None,
     # zsdkap_zsbe_merged_df.to_excel(r'excel_files\bq–issue–tests\zsdkap_zsbe_merged_df.xlsx', index=False)
     zsdkap_zsbe_merged_df['special_stock_indicator'] = zsdkap_zsbe_merged_df['special_stock_indicator'].replace('', pd.NA).fillna('general_stock')
     zsdkap_zsbe_merged_df.fillna(0, inplace=True)
-    # zsdkap_zsbe_merged_df = zsdkap_zsbe_merged_df.fillna(0).infer_objects(copy=False)
 
     mb5t_df.rename(columns={'plant': 'delivery_plant'}, inplace=True)
     mb5t_df[['customer_order_number', 'customer_order_position']] = (
@@ -295,21 +261,14 @@ def calculate_order_level_KPI(horizons=None,
     # mb5t_df.to_excel(r'excel_files\bq–issue–tests\mb5t_df.xlsx', index=False)
 
     zsdkap_zsbe_mb5t_merged_df = pd.merge(zsdkap_zsbe_merged_df, mb5t_df, on=['mat_number', 'customer_order_number', 'customer_order_position', 'delivery_plant'], how='left')
-    # zsdkap_zsbe_mb5t_merged_df = zsdkap_zsbe_mb5t_merged_df.rename(columns=mb5td_new_columns_names)
-    zsdkap_zsbe_mb5t_merged_df.fillna(0, inplace=True)
 
-    # Ensure stock quantities for confi items
-    # zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df)
-    # mb52_zsdkap_merged_df = pd.merge(zsdkap_customer_orders_numbers_df, mb52_df, on=('mat_number', 'customer_order_number', 'customer_order_position'), how='inner')
-    # mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
-    # mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity', 'mat_description']]
+    zsdkap_zsbe_mb5t_merged_df.fillna(0, inplace=True)
 
     # Add appropriate grouping for MB52 general stocks (by mat num and plant)
     mb52_special_stocks_df = mb52_df[~mb52_df['customer_order_number'].isna()][['customer_order_number', 'customer_order_position', 'delivery_plant', 'mat_number', 'stock_quantity']].copy()
     mb52_general_stocks_df = mb52_df[mb52_df['customer_order_number'].isna()][['delivery_plant', 'mat_number', 'stock_quantity']].copy()
     mb52_general_stocks_df = mb52_general_stocks_df.groupby(['mat_number', 'delivery_plant'], as_index=False).agg({"stock_quantity": "sum"})
 
-    # zsdkap_zsbe_mb5t_merged_df.groupby(['mat_number', 'delivery_plant'], as_index=False).agg({""})
     agg_dict = {
         col: 'sum' if pd.api.types.is_numeric_dtype(zsdkap_zsbe_mb5t_merged_df[col]) else 'first'
         for col in zsdkap_zsbe_mb5t_merged_df.columns
@@ -348,37 +307,6 @@ def calculate_order_level_KPI(horizons=None,
     mask = (merged['special_stock_indicator'] == 'general_stock') & (merged['customer_order_number'] != 'general_stock_position')
     merged.loc[mask, ['customer_order_number', 'customer_order_position']] = 'grouped_orders'
 
-    # merged.to_excel(r'excel_files\bq–issue–tests\merged.xlsx', index=False)
-    # merged = pd.merge(zsdkap_zsbe_mb5t_merged_df, mb52_zsdkap_merged_df, on='mat_number', how='left', suffixes=('_zsbe', '_mb52'))
-    # merged['stock_quantity'] = merged['stock_quantity_zsbe'].fillna(0) + merged['stock_quantity_mb52'].fillna(0)
-
-    # Drop the temporary columns
-    # merged = merged.drop(columns=['delivery_plant_x', 'delivery_plant_y'])
-
-    # for h in horizons:
-    #     zsdkap_customer_orders_numbers_df = get_zsdkap_customer_orders_numbers(mrp_controller, mat_name, zsdkap_df,
-    #                                                                            date_limit=get_nth_working_day(h))
-    #     mb52_zsdkap_merged_df = pd.merge(zsdkap_customer_orders_numbers_df, mb52_df,
-    #                                      on=('mat_number', 'customer_order_number', 'customer_order_position'),
-    #                                      how='inner')
-    #     mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.groupby('mat_number', as_index=False).sum()
-    #     mb52_zsdkap_merged_df = mb52_zsdkap_merged_df[['mat_number', 'stock_quantity']]
-    #     mb52_zsdkap_merged_df = mb52_zsdkap_merged_df.rename(columns={'stock_quantity': 'stock_quantity_mb52'})
-    #
-    #     merged = pd.merge(merged, mb52_zsdkap_merged_df, on='mat_number', how='left')
-    #
-    #     # try:
-    #     merged[f'stock_quantity_{h}_days'] = merged['stock_quantity_zsbe'].fillna(0) + merged['stock_quantity_mb52'].fillna(0)
-    #     # except KeyError:
-    #     #     merged[f'stock_quantity_{h}_days'] = merged[f'stock_quantity_{h}_days_df1'].fillna(0) + merged[f'stock_quantity'].fillna(0)
-    #     # try:
-    #         # Drop the temporary columns
-    #     merged = merged.drop(columns=[f'stock_quantity_mb52'])
-    #     # except KeyError:
-    #     #     # Drop the temporary columns
-    #     #     merged = merged.drop(columns=[f'stock_quantity_{h}_days_df1', f'stock_quantity'])
-
-    # zsdkap_zsbe_mb5t_merged_df = merged
     merged['stock_quantity'] = merged['stock_quantity'].replace('', pd.NA).fillna(0)
     merged['to_be_produced_all'] = merged.apply(calculate_to_be_produced_all, axis=1)
 
@@ -506,13 +434,13 @@ def mont_kpis():
 
 if __name__ == "__main__":
 
-    # department = sys.argv[1]
-    # if department == 'wmo':
-    #     wmo_kpis()
-    # elif department == 'wmr':
-    #     wmr_kpis()
-    # elif department == 'mont':
-    #     mont_kpis()
+    department = sys.argv[1]
+    if department == 'wmo':
+        wmo_kpis()
+    elif department == 'wmr':
+        wmr_kpis()
+    elif department == 'mont':
+        mont_kpis()
     # mont_kpis()
-    wmo_kpis()
+    # wmo_kpis()
     # wmr_kpis()
