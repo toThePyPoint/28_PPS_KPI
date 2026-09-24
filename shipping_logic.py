@@ -12,7 +12,7 @@ TRANSPORT_ROUTES = {
     # Polska -> Czechy
     ("2101", "3701"): [
         {"ship_day": 1, "arrival_day": 3},  # wt -> czw
-        {"ship_day": 4, "arrival_day": 1},  # pt -> wt
+        {"ship_day": 4, "arrival_day": 2},  # pt -> śr (wakacje)
     ],
 
     # Polska -> Niemcy

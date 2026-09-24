@@ -455,6 +455,10 @@ if __name__ == "__main__":
         wmr_kpis()
     elif department == 'mont':
         mont_kpis()
+    elif department == 'all_departments':
+        wmo_kpis()
+        wmr_kpis()
+        mont_kpis()
     # mont_kpis()
     # wmo_kpis()
     # wmr_kpis()
